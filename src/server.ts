@@ -31,8 +31,8 @@ app.use('/audio', express.static(audioDir));
 
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
-// 1. Initial Call Entry
-app.post(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
+// 1. Initial Call Entry (Handles GET for validation and POST for real calls)
+app.all(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
     const twiml = new VoiceResponse();
     console.log(`[Twilio] Incoming call from ${req.body.From}`);
 
@@ -48,7 +48,7 @@ app.post(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
 });
 
 // 2. Process Recording and Respond
-app.post(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
+app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
     const twiml = new VoiceResponse();
     const recordingUrl = req.body.RecordingUrl;
     const userId = req.body.From;
