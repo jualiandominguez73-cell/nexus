@@ -12,6 +12,17 @@ import { Buffer } from 'node:buffer';
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
+// Global Logging Middleware
+app.use((req, res, next) => {
+    console.log(`[HTTP] ${req.method} ${req.url} - ${new Date().toISOString()}`);
+    next();
+});
+
+// Health Check
+app.get('/', (req, res) => {
+    res.send('NEXUS Voice Server is LIVE 🚀');
+});
+
 // Serve static audio files
 const publicDir = join(process.cwd(), 'public');
 const audioDir = join(publicDir, 'audio');
