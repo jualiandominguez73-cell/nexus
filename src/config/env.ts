@@ -16,6 +16,8 @@ const envSchema = z.object({
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default('./firebase-service-account.json'),
     FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
     PORT: z.string().default('3000'),
+    TWILIO_ACCOUNT_SID: z.string().optional(),
+    TWILIO_AUTH_TOKEN: z.string().optional(),
 });
 
 // Validate env vars

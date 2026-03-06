@@ -70,12 +70,24 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
 
         console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
         const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
-        const audioRes = await axios({
+
+        // Prepare axios config with optional Twilio Auth
+        const axiosConfig: any = {
             method: 'GET',
             url: recordingUrl,
             responseType: 'arraybuffer',
-            timeout: 5000 // 5 seconds timeout for download
-        });
+            timeout: 5000
+        };
+
+        if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+            console.log('[Twilio] Using Auth for recording download.');
+            axiosConfig.auth = {
+                username: env.TWILIO_ACCOUNT_SID,
+                password: env.TWILIO_AUTH_TOKEN
+            };
+        }
+
+        const audioRes = await axios(axiosConfig);
         writeFileSync(tempFilePath, Buffer.from(audioRes.data));
         console.log(`[Twilio] Download complete: ${tempFilePath}`);
 
@@ -130,17 +142,33 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         res.type('text/xml');
         res.send(response.toString());
     } catch (err: any) {
-        console.error('[Voice Process Error Details]:', {
+        const statusCode = err.response?.status || 500;
+        console.error(`[Voice Process Error Details] Status: ${statusCode}`, {
             message: err.message,
             stack: err.stack,
             body: req.body
         });
+
         const errorResponse = new VoiceResponse();
-        errorResponse.say({ voice: 'alice', language: 'es-ES' }, `Hubo un error en el paso: ${err.message.split(':')[0]}. Revisa los logs de Railway para más detalles.`);
+        let errorMsg = 'Lo siento, hubo un error procesando tu audio.';
+
+        if (statusCode === 401) {
+            errorMsg = 'Error 401: Autorización fallida. Por favor revisa las llaves API y los permisos de Twilio.';
+        }
+
+        errorResponse.say({ voice: 'alice', language: 'es-ES' }, errorMsg);
         res.type('text/xml').send(errorResponse.toString());
     }
 });
 
-export function startServer() {
+export async function startServer() {
+    // Startup Check
+    console.log('[Server] Starting up...');
+    if (!env.GROQ_API_KEY) {
+        console.error('[CRITICAL] GROQ_API_KEY is missing!');
+    } else {
+        console.log('[Server] GROQ_API_KEY is present.');
+    }
+
     app.listen(env.PORT, () => console.log(`[Server] Running on ${env.PORT}`));
 }
