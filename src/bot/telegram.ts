@@ -2,6 +2,9 @@ import { Bot } from 'grammy';
 import { env, allowedUserIds } from '../config/env.js';
 import { memoryDb } from '../db/memory.js';
 import { runAgentLoop } from '../agent/loop.js';
+import { transcribeAudio, generateVoice } from '../agent/voice.js';
+import { InputFile } from 'grammy';
+import { unlink } from 'node:fs/promises';
 
 export const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
@@ -49,5 +52,35 @@ bot.on('message:text', async (ctx) => {
     } catch (error: any) {
         console.error('Agent loop error:', error);
         await ctx.reply(`I encountered an internal error: ${error.message}`);
+    }
+});
+
+bot.on('message:voice', async (ctx) => {
+    const userId = ctx.from!.id;
+    const threadId = `thread_${userId}`;
+
+    await memoryDb.createThread(threadId, userId);
+    await ctx.replyWithChatAction('record_voice');
+
+    let voicePath: string | null = null;
+    try {
+        const file = await ctx.getFile();
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+        const transcribedText = await transcribeAudio(fileUrl);
+        console.log(`Transcribed voice from ${userId}: ${transcribedText}`);
+
+        const responseText = await runAgentLoop(threadId, transcribedText);
+
+        voicePath = await generateVoice(responseText);
+        await ctx.replyWithVoice(new InputFile(voicePath));
+
+    } catch (error: any) {
+        console.error('Voice handler error:', error);
+        await ctx.reply(`Voice error: ${error.message}`);
+    } finally {
+        if (voicePath) {
+            try { await unlink(voicePath); } catch (e) { }
+        }
     }
 });
