@@ -22,6 +22,7 @@ const envSchema = z.object({
     OPENROUTER_MODEL: z.string().default('openrouter/free'),
     DB_PATH: z.string().default('./memory.db'),
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default('./firebase-service-account.json'),
+    FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
 });
 
 // Validate env vars
