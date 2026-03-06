@@ -59,11 +59,11 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         }
 
         const recordingUrl = req.body.RecordingUrl;
-        const userId = req.body.From;
-        const threadId = `twilio_${userId}`;
+        const userId = req.body.From || 'UnknownUser';
+        const threadId = `twilio_${userId.replace(/\+/g, '')}`;
 
         if (!recordingUrl) {
-            console.error('[Twilio] No RecordingUrl in request body:', req.body);
+            console.error('[Twilio] No RecordingUrl in request body:', JSON.stringify(req.body));
             response.say('No pude recibir tu mensaje de voz.');
             return res.type('text/xml').send(response.toString());
         }
@@ -72,29 +72,47 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
         const audioRes = await axios({ method: 'GET', url: recordingUrl, responseType: 'arraybuffer' });
         writeFileSync(tempFilePath, Buffer.from(audioRes.data));
+        console.log(`[Twilio] Download complete: ${tempFilePath}`);
 
         console.log(`[Twilio] Step 2: Transcribing audio file...`);
-        const userText = await transcribeFile(tempFilePath);
+        const userText = await transcribeFile(tempFilePath).catch(e => {
+            console.error('[STT Failure]:', e);
+            throw new Error(`Transcription failed: ${e.message}`);
+        });
         console.log(`[Twilio] User said: ${userText}`);
 
-        console.log(`[Twilio] Step 3: Running AI agent loop...`);
-        const aiResponse = await runAgentLoop(threadId, userText);
+        if (!userText || userText.trim() === '') {
+            response.say('Lo siento, no pude entender lo que dijiste. ¿Puedes repetir?');
+            response.record({ action: '/api/twilio/voice-process', maxLength: 30, playBeep: true });
+            return res.type('text/xml').send(response.toString());
+        }
+
+        console.log(`[Twilio] Step 3: Running AI agent loop for thread ${threadId}...`);
+        const aiResponse = await runAgentLoop(threadId, userText).catch(e => {
+            console.error('[Agent Loop Failure]:', e);
+            throw new Error(`AI Agent failed: ${e.message}`);
+        });
         console.log(`[Twilio] AI Response: ${aiResponse}`);
 
         console.log(`[Twilio] Step 4: Generating TTS audio...`);
-        const localAudioPath = await generateVoice(aiResponse);
+        const localAudioPath = await generateVoice(aiResponse).catch(e => {
+            console.error('[TTS Failure]:', e);
+            throw new Error(`Voice generation failed: ${e.message}`);
+        });
 
         console.log(`[Twilio] Step 5: Moving audio to public folder...`);
         const publicAudioName = basename(localAudioPath);
-        copyFileSync(localAudioPath, join(audioDir, publicAudioName));
+        const finalPublicPath = join(audioDir, publicAudioName);
+        copyFileSync(localAudioPath, finalPublicPath);
+        console.log(`[Twilio] Audio saved to: ${finalPublicPath}`);
 
         const myUrl = req.protocol + '://' + req.get('host');
-        // Twilio requires absolute URLs for Play
         const audioFullUrl = `${myUrl}/audio/${publicAudioName}`;
         console.log(`[Twilio] Step 6: Playing audio from ${audioFullUrl}`);
 
         response.play(audioFullUrl);
 
+        // After playing the response, listen again
         response.record({
             action: '/api/twilio/voice-process',
             maxLength: 30,
@@ -110,7 +128,7 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             body: req.body
         });
         const errorResponse = new VoiceResponse();
-        errorResponse.say({ voice: 'alice', language: 'es-ES' }, 'Lo siento, hubo un error procesando tu audio. Por favor, intenta de nuevo.');
+        errorResponse.say({ voice: 'alice', language: 'es-ES' }, `Hubo un error en el paso: ${err.message.split(':')[0]}. Revisa los logs de Railway para más detalles.`);
         res.type('text/xml').send(errorResponse.toString());
     }
 });
