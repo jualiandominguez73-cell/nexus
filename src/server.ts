@@ -33,18 +33,23 @@ const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // 1. Initial Call Entry (Handles GET for validation and POST for real calls)
 app.all(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
-    const twiml = new VoiceResponse();
-    console.log(`[Twilio] Incoming call from ${req.body.From}`);
+    try {
+        const twiml = new VoiceResponse();
+        console.log(`[Twilio] Incoming call from ${req.body?.From || 'Unknown'}`);
 
-    twiml.say({ voice: 'alice', language: 'es-ES' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte hoy? Escucharé tu mensaje después del tono.');
-    twiml.record({
-        action: '/voice-process',
-        maxLength: 30,
-        playBeep: true
-    });
+        twiml.say({ voice: 'alice', language: 'es-ES' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte hoy? Escucharé tu mensaje después del tono.');
+        twiml.record({
+            action: '/voice-process',
+            maxLength: 30,
+            playBeep: true
+        });
 
-    res.type('text/xml');
-    res.send(twiml.toString());
+        res.type('text/xml');
+        res.send(twiml.toString());
+    } catch (err: any) {
+        console.error('[Route Error]:', err);
+        res.status(500).send(`Server Error: ${err.message}\n${err.stack}`);
+    }
 });
 
 // 2. Process Recording and Respond
