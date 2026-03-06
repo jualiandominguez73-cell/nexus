@@ -4,7 +4,7 @@ import { memoryDb } from '../db/memory.js';
 
 const MAX_ITERATIONS = 5;
 
-export async function runAgentLoop(threadId: string, userPrompt: string): Promise<string> {
+export async function runAgentLoop(threadId: string, userPrompt: string | any[]): Promise<string> {
     // Add user prompt to memory
     await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt });
 

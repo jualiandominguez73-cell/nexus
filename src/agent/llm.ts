@@ -3,12 +3,18 @@ import { env } from '../config/env.js';
 import { getToolsForLLM } from '../tools/index.js';
 
 const groq = new Groq({ apiKey: env.GROQ_API_KEY });
-const GROQ_MODEL = 'llama-3.3-70b-versatile'; // Or any preferred Groq free capability model
+const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_VISION_MODEL = 'llama-3.2-11b-vision-preview';
 
 export async function chatCompletion(messages: any[], useFallback = false) {
     const tools = getToolsForLLM();
 
-    if (!useFallback) {
+    // Check if any message contains an image_url
+    const hasImage = messages.some(msg =>
+        Array.isArray(msg.content) && msg.content.some((part: any) => part.type === 'image_url')
+    );
+
+    if (!useFallback && !hasImage) {
         try {
             const response = await groq.chat.completions.create({
                 model: GROQ_MODEL,
@@ -18,10 +24,25 @@ export async function chatCompletion(messages: any[], useFallback = false) {
             });
             return response.choices[0].message;
         } catch (error) {
-            console.warn('Groq API failed. Attempting fallback if OpenRouter is configured...', error);
+            console.warn('Groq API failed. Attempting fallback...', error);
+            return await chatCompletionOpenRouter(messages, tools);
+        }
+    } else if (hasImage) {
+        // Use Vision capable model
+        try {
+            console.log('Vision detected, using vision-capable model...');
+            // We can try Groq's vision model or go straight to OpenRouter (Gemini is usually better for vision)
             if (env.OPENROUTER_API_KEY) {
                 return await chatCompletionOpenRouter(messages, tools);
             }
+            const response = await groq.chat.completions.create({
+                model: GROQ_VISION_MODEL,
+                messages,
+                // Groq vision models might have limited tool support, so we skip tools for vision for now if on Groq
+            });
+            return response.choices[0].message;
+        } catch (error) {
+            console.error('Vision completion failed:', error);
             throw error;
         }
     } else {

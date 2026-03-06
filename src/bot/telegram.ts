@@ -95,3 +95,34 @@ bot.on('message:voice', async (ctx) => {
         }
     }
 });
+
+bot.on('message:photo', async (ctx) => {
+    const userId = ctx.from!.id;
+    const threadId = `thread_${userId}`;
+    const caption = ctx.message.caption || "Analiza esta imagen.";
+
+    await memoryDb.createThread(threadId, userId);
+    await ctx.replyWithChatAction('typing');
+
+    try {
+        console.log(`[Vision] Processing photo from user ${userId}`);
+        const photo = ctx.message.photo.pop()!; // Get the largest photo
+        const file = await ctx.getFile();
+        const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
+
+        // Prepare multi-part content
+        const visionContent = [
+            { type: 'text', text: caption },
+            { type: 'image_url', image_url: { url: fileUrl } }
+        ];
+
+        console.log(`[Vision] Sending image to agent loop...`);
+        const response = await runAgentLoop(threadId, visionContent);
+        await ctx.reply(response);
+        console.log(`[Vision] Response sent.`);
+
+    } catch (error: any) {
+        console.error('[Vision Error]:', error);
+        await ctx.reply(`Lo siento, no pude procesar la imagen: ${error.message}`);
+    }
+});
