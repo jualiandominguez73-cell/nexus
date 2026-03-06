@@ -1,0 +1,24 @@
+{
+  "name": "nexus-tech-hub",
+  "version": "1.0.0",
+  "description": "NEXUS Tech Hub - Personal AI Agent on Telegram",
+  "type": "module",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5",
+    "firebase-admin": "^13.7.0",
+    "grammy": "^1.31.2",
+    "groq-sdk": "^0.8.0",
+    "zod": "^3.23.8"
+  },
+  "devDependencies": {
+    "@types/node": "^22.9.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.6.3"
+  }
+}
