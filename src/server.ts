@@ -32,7 +32,7 @@ app.use('/audio', express.static(audioDir));
 const VoiceResponse = twilio.twiml.VoiceResponse;
 
 // 1. Initial Call Entry
-app.post(['/voice', '/api/twilio'], (req, res) => {
+app.post(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
     const twiml = new VoiceResponse();
     console.log(`[Twilio] Incoming call from ${req.body.From}`);
 
