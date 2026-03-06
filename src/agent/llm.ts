@@ -22,6 +22,7 @@ export async function chatCompletion(messages: any[], useFallback = false) {
                 model: GROQ_VISION_MODEL,
                 messages,
                 max_tokens: 1024,
+                // Do NOT pass tools for vision requests to avoid 404/Not Supported errors
             });
             return response.choices[0].message;
         } catch (error: any) {
@@ -31,10 +32,11 @@ export async function chatCompletion(messages: any[], useFallback = false) {
             if (env.OPENROUTER_API_KEY) {
                 console.log('[LLM] Falling back to OpenRouter for Vision...');
                 try {
-                    return await chatCompletionOpenRouter(messages, tools);
+                    // Try a specific, reliable vision model on OpenRouter as fallback
+                    return await chatCompletionOpenRouter(messages, null, 'google/gemini-2.0-flash-001:free');
                 } catch (orError: any) {
                     if (orError.message.includes('429') || orError.message.includes('Too Many Requests')) {
-                        throw new Error("Límite de velocidad alcanzado en los modelos de visión gratuitos. Por favor, espera un minuto e intenta de nuevo.");
+                        throw new Error("Límite de velocidad alcanzado en los modelos de visión (Groq y OpenRouter). Por favor, intenta de nuevo en un minuto.");
                     }
                     throw orError;
                 }
@@ -61,11 +63,11 @@ export async function chatCompletion(messages: any[], useFallback = false) {
     }
 }
 
-async function chatCompletionOpenRouter(messages: any[], tools: any) {
+async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverride?: string) {
     if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter API key not configured.');
 
     const payload: any = {
-        model: env.OPENROUTER_MODEL,
+        model: modelOverride || env.OPENROUTER_MODEL,
         messages
     };
 
