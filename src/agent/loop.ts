@@ -4,18 +4,18 @@ import { memoryDb } from '../db/memory.js';
 
 const MAX_ITERATIONS = 5;
 
-export async function runAgentLoop(threadId: string, userPrompt: string | any[]): Promise<string> {
+export async function runAgentLoop(threadId: string, userPrompt: string | any[], maxIterations = MAX_ITERATIONS, systemPrompt?: string): Promise<string> {
     // Add user prompt to memory
     await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt });
 
-    for (let i = 0; i < MAX_ITERATIONS; i++) {
+    for (let i = 0; i < maxIterations; i++) {
         const messages = await memoryDb.getMessages(threadId);
 
         // Inject system instructions dynamically
         const messagesToSent = [
             {
                 role: 'system',
-                content: 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You can see images and listen to voice messages. For images, describe what you see in detail if asked. Keep answers helpful and concise.'
+                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You can see images and listen to voice messages. For images, describe what you see in detail if asked. Keep answers helpful and concise.'
             },
             ...messages
         ];

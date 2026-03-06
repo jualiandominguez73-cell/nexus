@@ -70,7 +70,12 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
 
         console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
         const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
-        const audioRes = await axios({ method: 'GET', url: recordingUrl, responseType: 'arraybuffer' });
+        const audioRes = await axios({
+            method: 'GET',
+            url: recordingUrl,
+            responseType: 'arraybuffer',
+            timeout: 5000 // 5 seconds timeout for download
+        });
         writeFileSync(tempFilePath, Buffer.from(audioRes.data));
         console.log(`[Twilio] Download complete: ${tempFilePath}`);
 
@@ -82,13 +87,16 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         console.log(`[Twilio] User said: ${userText}`);
 
         if (!userText || userText.trim() === '') {
-            response.say('Lo siento, no pude entender lo que dijiste. ¿Puedes repetir?');
+            response.say('No pude escucharte bien. ¿Puedes repetir?');
             response.record({ action: '/api/twilio/voice-process', maxLength: 30, playBeep: true });
             return res.type('text/xml').send(response.toString());
         }
 
-        console.log(`[Twilio] Step 3: Running AI agent loop for thread ${threadId}...`);
-        const aiResponse = await runAgentLoop(threadId, userText).catch(e => {
+        console.log(`[Twilio] Step 3: Running AI agent loop (LITE) for thread ${threadId}...`);
+        const voiceSystemPrompt = 'Eres NEXUS, un asistente por teléfono rápido y amable. Responde de forma muy breve y conversacional, como una persona real. No uses listas ni explicaciones largas. Habla directamente al grano.';
+
+        // Limit to 1 iteration for telephone calls for instant response
+        const aiResponse = await runAgentLoop(threadId, userText, 1, voiceSystemPrompt).catch(e => {
             console.error('[Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
         });
