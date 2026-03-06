@@ -6,6 +6,7 @@ async function bootstrap() {
 
     // Dynamically load tools to register them
     await import('./tools/get_current_time.js');
+    await import('./tools/gog.js');
 
     console.log("Connecting Telegram Bot in polling mode...");
 
