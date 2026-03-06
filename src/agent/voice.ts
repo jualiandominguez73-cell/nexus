@@ -15,6 +15,7 @@ export async function transcribeAudio(fileUrl: string): Promise<string> {
 
     try {
         // Download file from Telegram
+        console.log(`[STT] Downloading voice file...`);
         const response = await axios({
             method: 'GET',
             url: fileUrl,
@@ -25,16 +26,24 @@ export async function transcribeAudio(fileUrl: string): Promise<string> {
         response.data.pipe(writer);
 
         await new Promise((resolve, reject) => {
-            writer.on('finish', () => resolve(undefined));
-            writer.on('error', reject);
+            writer.on('finish', () => {
+                console.log(`[STT] Download complete. Temporal file: ${tempFilePath}`);
+                resolve(undefined);
+            });
+            writer.on('error', (err) => {
+                console.error(`[STT] Download error:`, err);
+                reject(err);
+            });
         });
 
         // Transcribe with Groq Whisper
+        console.log(`[STT] Sending to Groq Whisper...`);
         const transcription = await groq.audio.transcriptions.create({
             file: createReadStream(tempFilePath),
             model: 'whisper-large-v3',
             response_format: 'verbose_json',
         });
+        console.log(`[STT] Transcription successful.`);
 
         return transcription.text;
     } finally {

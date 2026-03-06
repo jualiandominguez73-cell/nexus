@@ -60,24 +60,35 @@ bot.on('message:voice', async (ctx) => {
     const threadId = `thread_${userId}`;
 
     await memoryDb.createThread(threadId, userId);
+    await ctx.reply("He recibido tu audio, déjame escucharlo... 🎧");
     await ctx.replyWithChatAction('record_voice');
 
     let voicePath: string | null = null;
     try {
+        console.log(`[Voice] Starting processing for user ${userId}`);
         const file = await ctx.getFile();
         const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
+        console.log(`[Voice] Transcribing audio from: ${file.file_path}`);
         const transcribedText = await transcribeAudio(fileUrl);
-        console.log(`Transcribed voice from ${userId}: ${transcribedText}`);
+
+        if (!transcribedText || transcribedText.trim() === '') {
+            throw new Error("No pude entender nada en el audio.");
+        }
+
+        console.log(`[Voice] Transcription: ${transcribedText}`);
+        await ctx.reply(`Te he entendido: "${transcribedText}"\n\nDejame pensar...`);
 
         const responseText = await runAgentLoop(threadId, transcribedText);
+        console.log(`[Voice] Agent response ready. Generating TTS...`);
 
         voicePath = await generateVoice(responseText);
         await ctx.replyWithVoice(new InputFile(voicePath));
+        console.log(`[Voice] Audio response sent successfully.`);
 
     } catch (error: any) {
-        console.error('Voice handler error:', error);
-        await ctx.reply(`Voice error: ${error.message}`);
+        console.error('[Voice Error]:', error);
+        await ctx.reply(`Lo siento, tuve un problema con el audio: ${error.message}`);
     } finally {
         if (voicePath) {
             try { await unlink(voicePath); } catch (e) { }
