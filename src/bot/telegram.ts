@@ -110,15 +110,21 @@ bot.on('message:photo', async (ctx) => {
         const file = await ctx.getFile();
         const fileUrl = `https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${file.file_path}`;
 
+        // Download and convert to base64 for reliability
+        const { default: axios } = await import('axios');
+        const response = await axios.get(fileUrl, { responseType: 'arraybuffer' });
+        const base64Image = Buffer.from(response.data).toString('base64');
+        const dataUrl = `data:image/jpeg;base64,${base64Image}`;
+
         // Prepare multi-part content
         const visionContent = [
             { type: 'text', text: caption },
-            { type: 'image_url', image_url: { url: fileUrl } }
+            { type: 'image_url', image_url: { url: dataUrl } }
         ];
 
-        console.log(`[Vision] Sending image to agent loop...`);
-        const response = await runAgentLoop(threadId, visionContent);
-        await ctx.reply(response);
+        console.log(`[Vision] Sending Base64 image to agent loop...`);
+        const responseText = await runAgentLoop(threadId, visionContent);
+        await ctx.reply(responseText);
         console.log(`[Vision] Response sent.`);
 
     } catch (error: any) {
