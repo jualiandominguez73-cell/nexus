@@ -8,6 +8,10 @@ async function bootstrap() {
     await import('./tools/get_current_time.js');
     await import('./tools/gog.js');
 
+    // Start Express Server for Twilio
+    const { startServer } = await import('./server.js');
+    startServer();
+
     console.log("Connecting Telegram Bot in polling mode...");
 
     bot.catch((err) => {

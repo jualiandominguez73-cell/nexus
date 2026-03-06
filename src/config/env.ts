@@ -15,6 +15,7 @@ const envSchema = z.object({
     DB_PATH: z.string().default('./memory.db'),
     FIREBASE_SERVICE_ACCOUNT_PATH: z.string().default('./firebase-service-account.json'),
     FIREBASE_SERVICE_ACCOUNT_JSON: z.string().optional(),
+    PORT: z.string().default('3000'),
 });
 
 // Validate env vars

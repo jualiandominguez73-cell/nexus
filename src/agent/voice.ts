@@ -26,30 +26,26 @@ export async function transcribeAudio(fileUrl: string): Promise<string> {
         response.data.pipe(writer);
 
         await new Promise((resolve, reject) => {
-            writer.on('finish', () => {
-                console.log(`[STT] Download complete. Temporal file: ${tempFilePath}`);
-                resolve(undefined);
-            });
-            writer.on('error', (err) => {
-                console.error(`[STT] Download error:`, err);
-                reject(err);
-            });
+            writer.on('finish', () => resolve(undefined));
+            writer.on('error', reject);
         });
 
-        // Transcribe with Groq Whisper
-        console.log(`[STT] Sending to Groq Whisper...`);
-        const transcription = await groq.audio.transcriptions.create({
-            file: createReadStream(tempFilePath),
-            model: 'whisper-large-v3',
-            response_format: 'verbose_json',
-        });
-        console.log(`[STT] Transcription successful.`);
-
-        return transcription.text;
+        return await transcribeFile(tempFilePath);
     } finally {
         // Cleanup
         try { await unlink(tempFilePath); } catch (e) { }
     }
+}
+
+export async function transcribeFile(filePath: string): Promise<string> {
+    console.log(`[STT] Sending to Groq Whisper: ${filePath}`);
+    const transcription = await groq.audio.transcriptions.create({
+        file: createReadStream(filePath),
+        model: 'whisper-large-v3',
+        response_format: 'verbose_json',
+    });
+    console.log(`[STT] Transcription successful.`);
+    return transcription.text;
 }
 
 export async function generateVoice(text: string): Promise<string> {

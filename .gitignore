@@ -13,3 +13,4 @@ nul
 bin/
 *.zip
 *.exe
+client_secret.json
