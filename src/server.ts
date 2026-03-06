@@ -71,12 +71,17 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
         const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
 
+        // Ensure URL has .wav extension for media download
+        const mediaUrl = recordingUrl.endsWith('.wav') || recordingUrl.endsWith('.mp3')
+            ? recordingUrl
+            : `${recordingUrl}.wav`;
+
         // Prepare axios config with optional Twilio Auth
         const axiosConfig: any = {
             method: 'GET',
-            url: recordingUrl,
+            url: mediaUrl,
             responseType: 'arraybuffer',
-            timeout: 5000
+            timeout: 10000
         };
 
         if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
@@ -87,7 +92,25 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             };
         }
 
-        const audioRes = await axios(axiosConfig);
+        // Retry loop for 404 (recording might take a second to be ready)
+        let audioRes;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                console.log(`[Twilio] Download attempt ${attempt}...`);
+                audioRes = await axios(axiosConfig);
+                break; // Success
+            } catch (err: any) {
+                if (err.response?.status === 404 && attempt < 3) {
+                    console.log(`[Twilio] Recording not ready (404). Retrying in 1.5s...`);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    continue;
+                }
+                throw err; // Permanent error or last attempt
+            }
+        }
+
+        if (!audioRes) throw new Error('Failed to download audio after retries');
+
         writeFileSync(tempFilePath, Buffer.from(audioRes.data));
         console.log(`[Twilio] Download complete: ${tempFilePath}`);
 
