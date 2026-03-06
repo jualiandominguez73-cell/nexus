@@ -2,7 +2,13 @@ import { config } from 'dotenv';
 import { z } from 'zod';
 
 // Load variables from .env
-config();
+console.log('Current working directory:', process.cwd());
+const result = config();
+if (result.error) {
+    console.error('Error loading .env file:', result.error);
+} else {
+    console.log('.env file loaded successfully');
+}
 
 const envSchema = z.object({
     TELEGRAM_BOT_TOKEN: z.string().min(1, "Telegram bot token is required"),
