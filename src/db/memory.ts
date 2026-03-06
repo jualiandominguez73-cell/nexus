@@ -4,9 +4,22 @@ import { env } from '../config/env.js';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-// Load service account
-const serviceAccountPath = join(process.cwd(), env.FIREBASE_SERVICE_ACCOUNT_PATH);
-const serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+// Load service account (Try from JSON string first, then from file)
+let serviceAccount: any;
+
+if (env.FIREBASE_SERVICE_ACCOUNT_JSON) {
+  try {
+    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
+    console.log('Firebase initialized using FIREBASE_SERVICE_ACCOUNT_JSON environment variable.');
+  } catch (err) {
+    console.error('Error parsing FIREBASE_SERVICE_ACCOUNT_JSON:', err);
+    throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_JSON format');
+  }
+} else {
+  const serviceAccountPath = join(process.cwd(), env.FIREBASE_SERVICE_ACCOUNT_PATH);
+  console.log(`Loading Firebase from file: ${serviceAccountPath}`);
+  serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
+}
 
 // Initialize Firebase
 const app = getApps().length === 0
