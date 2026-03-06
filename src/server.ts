@@ -48,7 +48,7 @@ app.post(['/voice', '/api/twilio', '/api/twilio/voice'], (req, res) => {
 });
 
 // 2. Process Recording and Respond
-app.post('/voice-process', async (req, res) => {
+app.post(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
     const twiml = new VoiceResponse();
     const recordingUrl = req.body.RecordingUrl;
     const userId = req.body.From;
