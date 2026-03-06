@@ -33,7 +33,8 @@ export async function chatCompletion(messages: any[], useFallback = false) {
                 console.log('[LLM] Falling back to OpenRouter for Vision...');
                 try {
                     // Try a specific, reliable vision model on OpenRouter as fallback
-                    return await chatCompletionOpenRouter(messages, null, 'google/gemini-2.0-flash-001:free');
+                    // Use a more robust vision model on OpenRouter as fallback
+                    return await chatCompletionOpenRouter(messages, null, 'google/gemini-2.0-flash-001');
                 } catch (orError: any) {
                     if (orError.message.includes('429') || orError.message.includes('Too Many Requests')) {
                         throw new Error("Límite de velocidad alcanzado en los modelos de visión (Groq y OpenRouter). Por favor, intenta de nuevo en un minuto.");
