@@ -1,19 +1,23 @@
 import { config } from 'dotenv';
 import { z } from 'zod';
+import { join } from 'node:path';
 
 // Load variables from .env
-console.log('Current working directory:', process.cwd());
-const result = config();
+const envPath = join(process.cwd(), '.env');
+console.log(`Attempting to load .env from: ${envPath}`);
+
+const result = config({ path: envPath });
+
 if (result.error) {
-    console.error('Error loading .env file:', result.error);
+    console.warn('Note: No .env file found at root. If you are in production, ensure environment variables are set in your host/dashboard.');
 } else {
-    console.log('.env file loaded successfully');
+    console.log('.env file loaded successfully from root.');
 }
 
 const envSchema = z.object({
-    TELEGRAM_BOT_TOKEN: z.string().min(1, "Telegram bot token is required"),
-    TELEGRAM_ALLOWED_USER_IDS: z.string().min(1, "Allowed user IDs are required"),
-    GROQ_API_KEY: z.string().min(1, "Groq API key is required"),
+    TELEGRAM_BOT_TOKEN: z.string({ required_error: "TELEGRAM_BOT_TOKEN is missing" }).min(1),
+    TELEGRAM_ALLOWED_USER_IDS: z.string({ required_error: "TELEGRAM_ALLOWED_USER_IDS is missing" }).min(1),
+    GROQ_API_KEY: z.string({ required_error: "GROQ_API_KEY is missing" }).min(1),
     OPENROUTER_API_KEY: z.string().optional(),
     OPENROUTER_MODEL: z.string().default('openrouter/free'),
     DB_PATH: z.string().default('./memory.db'),
