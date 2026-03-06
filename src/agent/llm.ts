@@ -14,7 +14,36 @@ export async function chatCompletion(messages: any[], useFallback = false) {
         Array.isArray(msg.content) && msg.content.some((part: any) => part.type === 'image_url')
     );
 
-    if (!useFallback && !hasImage) {
+    if (hasImage) {
+        // Use Vision capable model - Prioritize Groq Vision for stability/speed
+        try {
+            console.log(`[LLM] Vision detected. Using Groq: ${GROQ_VISION_MODEL}`);
+            const response = await groq.chat.completions.create({
+                model: GROQ_VISION_MODEL,
+                messages,
+                max_tokens: 1024,
+            });
+            return response.choices[0].message;
+        } catch (error: any) {
+            console.warn('[LLM] Groq Vision failed or rate limited:', error.message);
+
+            // Fallback to OpenRouter if Groq fails
+            if (env.OPENROUTER_API_KEY) {
+                console.log('[LLM] Falling back to OpenRouter for Vision...');
+                try {
+                    return await chatCompletionOpenRouter(messages, tools);
+                } catch (orError: any) {
+                    if (orError.message.includes('429') || orError.message.includes('Too Many Requests')) {
+                        throw new Error("Límite de velocidad alcanzado en los modelos de visión gratuitos. Por favor, espera un minuto e intenta de nuevo.");
+                    }
+                    throw orError;
+                }
+            }
+            throw error;
+        }
+    }
+
+    if (!useFallback) {
         try {
             const response = await groq.chat.completions.create({
                 model: GROQ_MODEL,
@@ -23,27 +52,9 @@ export async function chatCompletion(messages: any[], useFallback = false) {
                 tool_choice: 'auto'
             });
             return response.choices[0].message;
-        } catch (error) {
-            console.warn('Groq API failed. Attempting fallback...', error);
+        } catch (error: any) {
+            console.warn('[LLM] Groq text failed. Attempting fallback...', error.message);
             return await chatCompletionOpenRouter(messages, tools);
-        }
-    } else if (hasImage) {
-        // Use Vision capable model
-        try {
-            console.log('Vision detected, using vision-capable model...');
-            // We can try Groq's vision model or go straight to OpenRouter (Gemini is usually better for vision)
-            if (env.OPENROUTER_API_KEY) {
-                return await chatCompletionOpenRouter(messages, tools);
-            }
-            const response = await groq.chat.completions.create({
-                model: GROQ_VISION_MODEL,
-                messages,
-                // Groq vision models might have limited tool support, so we skip tools for vision for now if on Groq
-            });
-            return response.choices[0].message;
-        } catch (error) {
-            console.error('Vision completion failed:', error);
-            throw error;
         }
     } else {
         return await chatCompletionOpenRouter(messages, tools);

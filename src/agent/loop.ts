@@ -15,7 +15,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[])
         const messagesToSent = [
             {
                 role: 'system',
-                content: 'You are NEXUS Tech Hub, a highly capable and secure AI assistant running on Telegram. You have access to tools that you should use when needed. Keep answers helpful and concise.'
+                content: 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You can see images and listen to voice messages. For images, describe what you see in detail if asked. Keep answers helpful and concise.'
             },
             ...messages
         ];
