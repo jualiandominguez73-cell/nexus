@@ -3,7 +3,8 @@ import pkg from 'twilio';
 const { twiml } = pkg;
 const { VoiceResponse } = twiml;
 
-import { env } from './config/env.js';
+import { env, allowedUserIds } from './config/env.js';
+import { bot } from './bot/telegram.js';
 import { runAgentLoop } from './agent/loop.js';
 import { transcribeFile, generateVoice } from './agent/voice.js';
 import axios from 'axios';
@@ -126,6 +127,17 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             throw new Error(`Transcription failed: ${e.message}`);
         });
         console.log(`[Twilio] User said: ${userText}`);
+
+        // ====== TELEGRAM ALERT ======
+        try {
+            const adminId = allowedUserIds[0];
+            if (adminId && userText.trim() !== '') {
+                await bot.api.sendMessage(adminId, `📞 *Llamada Entrante ${userId}*\n\nNEXUS escuchó esto:\n_"${userText}"_`, { parse_mode: 'Markdown' });
+            }
+        } catch (botErr) {
+            console.error('[Telegram Notify Error]:', botErr);
+        }
+        // ============================
 
         if (!userText || userText.trim() === '') {
             response.say('No pude escucharte bien. ¿Puedes repetir?');
