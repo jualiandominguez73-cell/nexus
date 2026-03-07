@@ -189,7 +189,7 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
 });
 
 // WhatsApp / SMS Webhook
-app.all(['/whatsapp', '/api/twilio/whatsapp'], async (req, res) => {
+app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
     try {
         const response = new MessagingResponse();
         const from = req.body?.From || 'Unknown';
