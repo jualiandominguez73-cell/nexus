@@ -132,11 +132,11 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             return res.type('text/xml').send(response.toString());
         }
 
-        console.log(`[Twilio] Step 3: Running AI agent loop (LITE) for thread ${threadId}...`);
-        const voiceSystemPrompt = 'Eres NEXUS, un asistente por teléfono rápido y amable. Responde de forma muy breve y conversacional, como una persona real. No uses listas ni explicaciones largas. Habla directamente al grano.';
+        console.log(`[Twilio] Step 3: Running AI agent loop for thread ${threadId}...`);
+        const voiceSystemPrompt = 'Eres NEXUS, un asistente por teléfono rápido y amable. Responde de forma muy breve y conversacional. No uses listas ni explicaciones largas. No asumas que quieren buscar información o correos a menos que lo digan explícitamente.';
 
-        // Limit to 1 iteration for telephone calls for instant response
-        const aiResponse = await runAgentLoop(threadId, userText, 1, voiceSystemPrompt).catch(e => {
+        // Allow up to 3 iterations for telephone calls so it can use tools if requested, and then answer.
+        const aiResponse = await runAgentLoop(threadId, userText, 3, voiceSystemPrompt).catch(e => {
             console.error('[Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
         });
