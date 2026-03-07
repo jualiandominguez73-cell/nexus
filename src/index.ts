@@ -7,6 +7,7 @@ async function bootstrap() {
     // Dynamically load tools to register them
     await import('./tools/get_current_time.js');
     await import('./tools/gog.js');
+    await import('./tools/send_whatsapp.js');
 
     // Start Express Server for Twilio
     const { startServer } = await import('./server.js');
