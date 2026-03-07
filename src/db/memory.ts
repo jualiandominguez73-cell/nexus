@@ -31,10 +31,21 @@ const db = getFirestore(app);
 export const memoryDb = {
   async createThread(threadId: string, userId: number) {
     const threadRef = db.collection('threads').doc(threadId);
-    await threadRef.set({
-      user_id: userId,
-      updated_at: FieldValue.serverTimestamp()
-    }, { merge: true });
+    try {
+      await threadRef.update({
+        user_id: userId,
+        updated_at: FieldValue.serverTimestamp()
+      });
+    } catch (err: any) {
+      if (err.code === 5) { // NOT_FOUND
+        await threadRef.set({
+          user_id: userId,
+          updated_at: FieldValue.serverTimestamp()
+        });
+      } else {
+        throw err;
+      }
+    }
   },
 
   async addMessage(threadId: string, messageParam: any) {
@@ -48,9 +59,19 @@ export const memoryDb = {
     });
 
     // Update thread timestamp
-    await threadRef.update({
-      updated_at: FieldValue.serverTimestamp()
-    });
+    try {
+      await threadRef.update({
+        updated_at: FieldValue.serverTimestamp()
+      });
+    } catch (err: any) {
+      if (err.code === 5) { // NOT_FOUND
+        await threadRef.set({
+          updated_at: FieldValue.serverTimestamp()
+        });
+      } else {
+        throw err;
+      }
+    }
   },
 
   async getMessages(threadId: string): Promise<any[]> {

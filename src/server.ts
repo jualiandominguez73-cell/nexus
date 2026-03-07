@@ -68,6 +68,11 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             return res.type('text/xml').send(response.toString());
         }
 
+        if (req.body.CallStatus === 'completed' || req.body.RecordingDuration === '0' || req.body.Digits === 'hangup') {
+            console.log(`[Twilio] Call completed or zero duration. Ignoring processing for ${threadId}.`);
+            return res.type('text/xml').send(response.toString()); // Empty response
+        }
+
         console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
         const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
 
