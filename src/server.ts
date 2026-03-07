@@ -35,11 +35,12 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
         const from = req.body?.From || 'Unknown';
         console.log(`[Twilio] Call from ${from}`);
 
-        response.say({ voice: 'alice', language: 'es-ES' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
+        // MODO VERIFICACIÓN: No decir la bienvenida para que empiece a grabar a WhatsApp desde el segundo 0.
+        // response.say({ voice: 'alice', language: 'es-MX' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
         response.record({
-            action: '/api/twilio/voice-process', // Use specific path to avoid ambiguity
+            action: '/api/twilio/voice-process',
             maxLength: 30,
-            playBeep: true
+            playBeep: false // Sin tono para no confundir al robot de Meta
         });
 
         res.type('text/xml');
