@@ -1,7 +1,7 @@
 import express from 'express';
 import pkg from 'twilio';
 const { twiml } = pkg;
-const { VoiceResponse } = twiml;
+const { VoiceResponse, MessagingResponse } = twiml;
 
 import { env, allowedUserIds } from './config/env.js';
 import { bot } from './bot/telegram.js';
@@ -184,6 +184,62 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         }
 
         errorResponse.say({ voice: 'alice', language: 'es-ES' }, errorMsg);
+        res.type('text/xml').send(errorResponse.toString());
+    }
+});
+
+// WhatsApp / SMS Webhook
+app.all(['/whatsapp', '/api/twilio/whatsapp'], async (req, res) => {
+    try {
+        const response = new MessagingResponse();
+        const from = req.body?.From || 'Unknown';
+        const bodyText = req.body?.Body || '';
+        const numMedia = parseInt(req.body?.NumMedia || '0', 10);
+
+        console.log(`[Twilio WhatsApp] Message from ${from}: ${bodyText}`);
+
+        // Handle basic HTTP GET check
+        if (req.method === 'GET') {
+            return res.status(200).send('WhatsApp webhook is active.');
+        }
+
+        const threadId = `twilio_wa_${from.replace(/whatsapp:/, '').replace(/\+/g, '')}`;
+
+        // Construct message. If it includes images, we format it for the vision model
+        let finalMessageContent: any = bodyText;
+
+        if (numMedia > 0) {
+            finalMessageContent = [{ type: 'text', text: bodyText || "Describe la imagen adjunta." }];
+
+            for (let i = 0; i < numMedia; i++) {
+                const mediaUrl = req.body[`MediaUrl${i}`];
+                const contentType = req.body[`MediaContentType${i}`];
+
+                if (contentType?.startsWith('image/')) {
+                    // Adding image URL directly so LLM can fetch it, this usually works well with Groq/OpenRouter
+                    finalMessageContent.push({ type: 'image_url', image_url: { url: mediaUrl } });
+                }
+            }
+        }
+
+        // WhatsApp system prompt (similar to voice but formatted for texting)
+        const waSystemPrompt = 'Eres NEXUS, un asistente inteligente integrado en WhatsApp. Sé amable, conciso y responde como si estuvieras texteando con un amigo. Puedes usar emojis.';
+
+        const aiResponse = await runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt).catch(e => {
+            console.error('[WhatsApp Agent Loop Failure]:', e);
+            throw new Error(`AI Agent failed: ${e.message}`);
+        });
+
+        console.log(`[Twilio WhatsApp] AI Response: ${aiResponse}`);
+        response.message(aiResponse);
+
+        res.type('text/xml');
+        res.send(response.toString());
+
+    } catch (err: any) {
+        console.error('[WhatsApp Webhook Error]:', err);
+        const errorResponse = new MessagingResponse();
+        errorResponse.message('Lo siento, encontré un error al procesar tu mensaje de WhatsApp.');
         res.type('text/xml').send(errorResponse.toString());
     }
 });
