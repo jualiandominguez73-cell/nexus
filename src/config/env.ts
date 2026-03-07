@@ -18,7 +18,9 @@ const envSchema = z.object({
     PORT: z.string().default('3000'),
     TWILIO_ACCOUNT_SID: z.string().optional(),
     TWILIO_AUTH_TOKEN: z.string().optional(),
+    TWILIO_PHONE_NUMBER: z.string().optional(),
     TWILIO_WHATSAPP_NUMBER: z.string().optional(),
+    BASE_URL: z.string().optional(),
 });
 
 // Validate env vars

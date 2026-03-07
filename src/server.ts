@@ -7,6 +7,7 @@ import { env, allowedUserIds } from './config/env.js';
 import { bot } from './bot/telegram.js';
 import { runAgentLoop } from './agent/loop.js';
 import { transcribeFile, generateVoice } from './agent/voice.js';
+import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
 import axios from 'axios';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -243,6 +244,237 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         res.type('text/xml').send(errorResponse.toString());
     }
 });
+
+// =============================================
+// OUTBOUND CALL ENDPOINTS
+// =============================================
+
+// 1. Initial TwiML when the outbound call is answered
+app.post('/voice-outbound-init', async (req, res) => {
+    try {
+        const response = new VoiceResponse();
+        const callSid = req.body.CallSid;
+        const ctx = callSid ? getOutboundContext(callSid) : undefined;
+
+        const greeting = ctx
+            ? `Hola, te habla el asistente NEXUS. Disculpa la molestia, te llamo para lo siguiente: ${ctx.objective}. Por favor responde despues del tono.`
+            : 'Hola, te habla el asistente NEXUS. Disculpa la molestia, necesito hacerte una consulta rapida. Por favor responde despues del tono.';
+
+        response.say({ voice: 'alice', language: 'es-MX' }, greeting);
+        response.record({
+            action: '/voice-process-outbound',
+            maxLength: 30,
+            playBeep: true,
+        });
+
+        res.type('text/xml');
+        res.send(response.toString());
+    } catch (err: any) {
+        console.error('[Outbound Init Error]:', err);
+        const errResponse = new VoiceResponse();
+        errResponse.say('Lo siento, hubo un error. Adios.');
+        errResponse.hangup();
+        res.type('text/xml').send(errResponse.toString());
+    }
+});
+
+// 2. Process each recorded segment from the outbound call
+app.post('/voice-process-outbound', async (req, res) => {
+    try {
+        const response = new VoiceResponse();
+        const callSid = req.body.CallSid;
+        const ctx = callSid ? getOutboundContext(callSid) : undefined;
+
+        if (!ctx) {
+            console.error('[Outbound Process] No context found for CallSid:', callSid);
+            response.say('Lo siento, hubo un error con esta llamada. Adios.');
+            response.hangup();
+            return res.type('text/xml').send(response.toString());
+        }
+
+        const recordingUrl = req.body.RecordingUrl;
+        if (!recordingUrl) {
+            response.say('No pude escucharte. Puedes repetir?');
+            response.record({ action: '/voice-process-outbound', maxLength: 30, playBeep: true });
+            return res.type('text/xml').send(response.toString());
+        }
+
+        if (req.body.RecordingDuration === '0') {
+            response.say('No escuche nada. Puedes repetir?');
+            response.record({ action: '/voice-process-outbound', maxLength: 30, playBeep: true });
+            return res.type('text/xml').send(response.toString());
+        }
+
+        // Download and transcribe the recording
+        const tempFilePath = join(tmpdir(), `outbound_${Date.now()}.wav`);
+        const mediaUrl = recordingUrl.endsWith('.wav') ? recordingUrl : `${recordingUrl}.wav`;
+
+        const axiosConfig: any = {
+            method: 'GET',
+            url: mediaUrl,
+            responseType: 'arraybuffer',
+            timeout: 10000,
+        };
+
+        if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+            axiosConfig.auth = { username: env.TWILIO_ACCOUNT_SID, password: env.TWILIO_AUTH_TOKEN };
+        }
+
+        let audioRes;
+        for (let attempt = 1; attempt <= 3; attempt++) {
+            try {
+                audioRes = await axios(axiosConfig);
+                break;
+            } catch (err: any) {
+                if (err.response?.status === 404 && attempt < 3) {
+                    await new Promise(r => setTimeout(r, 1500));
+                    continue;
+                }
+                throw err;
+            }
+        }
+        if (!audioRes) throw new Error('Failed to download outbound recording after retries');
+
+        writeFileSync(tempFilePath, Buffer.from(audioRes.data));
+
+        const callerSaid = await transcribeFile(tempFilePath).catch(e => {
+            console.error('[Outbound STT Failure]:', e);
+            throw new Error(`Transcription failed: ${e.message}`);
+        });
+
+        console.log(`[Outbound] Person said: "${callerSaid}"`);
+        ctx.conversationLog.push(`Persona: ${callerSaid}`);
+
+        if (!callerSaid || callerSaid.trim() === '') {
+            response.say('No pude escucharte bien. Puedes repetir?');
+            response.record({ action: '/voice-process-outbound', maxLength: 30, playBeep: true });
+            return res.type('text/xml').send(response.toString());
+        }
+
+        // Outbound system prompt: reminds the AI of its mission
+        const outboundSystemPrompt = [
+            'Eres NEXUS, un asistente de IA que esta realizando una llamada telefonica saliente.',
+            `Tu OBJETIVO en esta llamada es: ${ctx.objective}`,
+            `Estas llamando al numero: ${ctx.to}`,
+            'Habla de forma amable, breve y directa. Eres profesional pero conversacional.',
+            'Cuando ya tengas la informacion que necesitas, despidete amablemente y di exactamente la palabra "MISION_CUMPLIDA" al final de tu respuesta.',
+            'Si la persona no puede ayudarte o se niega, despidete cortesmente y di "MISION_CUMPLIDA" al final.',
+            'No uses listas, ni markdown. Habla como en una conversacion telefonica normal.',
+        ].join(' ');
+
+        const aiResponse = await runAgentLoop(ctx.threadId, callerSaid, 3, outboundSystemPrompt);
+        console.log(`[Outbound] AI response: "${aiResponse}"`);
+        ctx.conversationLog.push(`NEXUS: ${aiResponse}`);
+
+        // Check if the AI signals mission complete
+        const missionComplete = aiResponse.includes('MISION_CUMPLIDA');
+        const cleanResponse = aiResponse.replace(/MISION_CUMPLIDA/g, '').trim();
+
+        response.say({ voice: 'alice', language: 'es-MX' }, cleanResponse);
+
+        if (missionComplete) {
+            response.say({ voice: 'alice', language: 'es-MX' }, 'Gracias por tu tiempo. Hasta luego.');
+            response.hangup();
+
+            // Send summary to Telegram
+            sendOutboundSummary(ctx).catch(err =>
+                console.error('[Outbound] Error sending Telegram summary:', err)
+            );
+        } else {
+            // Continue the conversation
+            response.record({
+                action: '/voice-process-outbound',
+                maxLength: 30,
+                playBeep: true,
+            });
+        }
+
+        res.type('text/xml');
+        res.send(response.toString());
+    } catch (err: any) {
+        console.error('[Outbound Process Error]:', err);
+        const errResponse = new VoiceResponse();
+        errResponse.say('Lo siento, hubo un error. Adios.');
+        errResponse.hangup();
+        res.type('text/xml').send(errResponse.toString());
+
+        // Try to notify on error too
+        const callSid = req.body?.CallSid;
+        const ctx = callSid ? getOutboundContext(callSid) : undefined;
+        if (ctx) {
+            sendOutboundSummary(ctx, 'Error durante la llamada').catch(() => {});
+        }
+    }
+});
+
+// 3. Status callback: fires when the call ends (catches hangups, no-answer, busy, etc.)
+app.post('/voice-outbound-status', async (req, res) => {
+    const callSid = req.body.CallSid;
+    const callStatus = req.body.CallStatus; // completed, busy, no-answer, failed, canceled
+    console.log(`[Outbound Status] CallSid=${callSid} Status=${callStatus}`);
+
+    const ctx = callSid ? getOutboundContext(callSid) : undefined;
+
+    if (ctx) {
+        if (callStatus !== 'completed' || ctx.conversationLog.length === 0) {
+            // Call didn't connect or ended without conversation
+            const reason = callStatus === 'busy' ? 'Linea ocupada'
+                : callStatus === 'no-answer' ? 'No contestaron'
+                : callStatus === 'failed' ? 'Llamada fallida'
+                : callStatus === 'canceled' ? 'Llamada cancelada'
+                : 'Llamada terminada sin conversacion';
+
+            await sendOutboundSummary(ctx, reason).catch(err =>
+                console.error('[Outbound Status] Error sending summary:', err)
+            );
+        } else if (ctx.conversationLog.length > 0) {
+            // Call completed normally - send summary if not already sent by MISION_CUMPLIDA
+            await sendOutboundSummary(ctx).catch(err =>
+                console.error('[Outbound Status] Error sending summary:', err)
+            );
+        }
+        deleteOutboundContext(callSid);
+    }
+
+    res.sendStatus(200);
+});
+
+// Helper: send the call summary back to Telegram
+async function sendOutboundSummary(ctx: import('./outbound/store.js').OutboundCallContext, errorReason?: string) {
+    try {
+        let summary: string;
+
+        if (errorReason) {
+            summary = `Llamada a ${ctx.to}\nEstado: ${errorReason}\nObjetivo: ${ctx.objective}`;
+        } else if (ctx.conversationLog.length === 0) {
+            summary = `Llamada a ${ctx.to}\nNo se pudo obtener informacion.\nObjetivo: ${ctx.objective}`;
+        } else {
+            // Ask the LLM to generate a clean summary of the conversation
+            const transcript = ctx.conversationLog.join('\n');
+            const summaryPrompt = [
+                `Resume la siguiente conversacion telefonica de forma clara y concisa.`,
+                `El objetivo de la llamada era: ${ctx.objective}`,
+                `Numero llamado: ${ctx.to}`,
+                `\nTranscripcion:\n${transcript}`,
+                `\nDa un resumen breve con la informacion obtenida. Si se logro el objetivo, indicalo.`
+            ].join('\n');
+
+            const aiSummary = await runAgentLoop(
+                `summary_${ctx.callSid}`,
+                summaryPrompt,
+                1,
+                'Eres un asistente que resume conversaciones telefonicas. Se breve y claro. Resalta la informacion clave obtenida.'
+            );
+
+            summary = `Llamada a ${ctx.to}\nObjetivo: ${ctx.objective}\n\nResumen:\n${aiSummary}`;
+        }
+
+        await bot.api.sendMessage(ctx.telegramChatId, summary);
+        console.log(`[Outbound] Summary sent to Telegram chat ${ctx.telegramChatId}`);
+    } catch (err) {
+        console.error('[Outbound] Failed to send Telegram summary:', err);
+    }
+}
 
 export async function startServer() {
     // Startup Check

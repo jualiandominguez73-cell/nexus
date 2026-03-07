@@ -47,7 +47,7 @@ bot.on('message:text', async (ctx) => {
     await ctx.replyWithChatAction('typing');
 
     try {
-        const response = await runAgentLoop(threadId, userText);
+        const response = await runAgentLoop(threadId, userText, undefined, undefined, { telegramChatId: userId });
         await ctx.reply(response);
     } catch (error: any) {
         console.error('Agent loop error:', error);
@@ -79,7 +79,7 @@ bot.on('message:voice', async (ctx) => {
         console.log(`[Voice] Transcription: ${transcribedText}`);
         await ctx.reply(`Te he entendido: "${transcribedText}"\n\nDejame pensar...`);
 
-        const responseText = await runAgentLoop(threadId, transcribedText);
+        const responseText = await runAgentLoop(threadId, transcribedText, undefined, undefined, { telegramChatId: userId });
         console.log(`[Voice] Agent response ready. Generating TTS...`);
 
         voicePath = await generateVoice(responseText);
@@ -123,7 +123,7 @@ bot.on('message:photo', async (ctx) => {
         ];
 
         console.log(`[Vision] Sending Base64 image to agent loop...`);
-        const responseText = await runAgentLoop(threadId, visionContent);
+        const responseText = await runAgentLoop(threadId, visionContent, undefined, undefined, { telegramChatId: userId });
         await ctx.reply(responseText);
         console.log(`[Vision] Response sent.`);
 
