@@ -142,23 +142,9 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         });
         console.log(`[Twilio] AI Response: ${aiResponse}`);
 
-        console.log(`[Twilio] Step 4: Generating TTS audio...`);
-        const localAudioPath = await generateVoice(aiResponse).catch(e => {
-            console.error('[TTS Failure]:', e);
-            throw new Error(`Voice generation failed: ${e.message}`);
-        });
-
-        console.log(`[Twilio] Step 5: Moving audio to public folder...`);
-        const publicAudioName = basename(localAudioPath);
-        const finalPublicPath = join(audioDir, publicAudioName);
-        copyFileSync(localAudioPath, finalPublicPath);
-        console.log(`[Twilio] Audio saved to: ${finalPublicPath}`);
-
-        const myUrl = req.protocol + '://' + req.get('host');
-        const audioFullUrl = `${myUrl}/audio/${publicAudioName}`;
-        console.log(`[Twilio] Step 6: Playing audio from ${audioFullUrl}`);
-
-        response.play(audioFullUrl);
+        console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio...`);
+        // Using Twilio's native Alice voice (or Polly) in Mexican Spanish to save the whole MP3 generation and public exposure latency
+        response.say({ voice: 'alice', language: 'es-MX' }, aiResponse);
 
         // After playing the response, listen again
         response.record({
