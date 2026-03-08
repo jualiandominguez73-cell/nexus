@@ -48,17 +48,76 @@ export async function transcribeFile(filePath: string): Promise<string> {
     return transcription.text;
 }
 
-export async function generateVoice(text: string): Promise<string> {
-    // Railway sometimes has issues with persistent fs, so we use tmp
-    const outputPath = join(tmpdir(), `response_${Date.now()}.mp3`);
+import { VoiceSettings } from '../db/settings.js';
+import { writeFileSync, existsSync, mkdirSync } from 'node:fs';
 
+export async function generateVoice(text: string): Promise<string> {
+    // Keep backwards compatibility for local Telegram TTS (node-gtts for simplicity if needed)
+    const outputPath = join(tmpdir(), `response_${Date.now()}.mp3`);
     return new Promise((resolve, reject) => {
         googleTts.save(outputPath, text, (err: any) => {
-            if (err) {
-                console.error('TTS Error:', err);
-                return reject(err);
-            }
+            if (err) return reject(err);
             resolve(outputPath);
         });
     });
+}
+
+// Ensure public audio dir exists
+const AUDIO_DIR = join(process.cwd(), 'public', 'audio');
+if (!existsSync(AUDIO_DIR)) mkdirSync(AUDIO_DIR, { recursive: true });
+
+export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings, baseUrl: string): Promise<{ action: 'say' | 'play', content: string, twilioVoiceId?: string }> {
+    const engine = settings.voiceEngine;
+
+    // Twilio Native
+    if (engine === 'twilio_basic') {
+        return { action: 'say', content: text, twilioVoiceId: 'alice' };
+    }
+    if (engine === 'twilio_neural') {
+        return { action: 'say', content: text, twilioVoiceId: 'Google.es-US-Neural2-A' };
+    }
+
+    try {
+        const fileName = `tts_${Date.now()}.mp3`;
+        const localPath = join(AUDIO_DIR, fileName);
+        const publicUrl = `${baseUrl}/audio/${fileName}`;
+
+        // OpenAI TTS
+        if (engine === 'openai' && settings.openAiKey) {
+            console.log(`[TTS] Generating voice via OpenAI...`);
+            const res = await axios.post('https://api.openai.com/v1/audio/speech', {
+                model: 'tts-1',
+                input: text,
+                voice: 'nova', // Good neutral voice
+            }, {
+                headers: { 'Authorization': `Bearer ${settings.openAiKey}` },
+                responseType: 'arraybuffer',
+                timeout: 10000
+            });
+            writeFileSync(localPath, Buffer.from(res.data));
+            return { action: 'play', content: publicUrl };
+        }
+
+        // ElevenLabs TTS
+        if (engine === 'elevenlabs' && settings.elevenLabsKey) {
+            console.log(`[TTS] Generating voice via ElevenLabs...`);
+            const voiceId = 'pNInz6obpgDQGcFmaJcg'; // Rachel / Adam or similar
+            const res = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
+                text,
+                model_id: 'eleven_multilingual_v2'
+            }, {
+                headers: { 'xi-api-key': settings.elevenLabsKey },
+                responseType: 'arraybuffer',
+                timeout: 15000
+            });
+            writeFileSync(localPath, Buffer.from(res.data));
+            return { action: 'play', content: publicUrl };
+        }
+
+    } catch (err: any) {
+        console.error(`[TTS Engine Error] fallback to Alice:`, err.message);
+    }
+
+    // Fallback if API keys fail or aren't set
+    return { action: 'say', content: text, twilioVoiceId: 'alice' };
 }

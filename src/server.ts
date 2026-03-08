@@ -6,8 +6,9 @@ const { VoiceResponse, MessagingResponse } = twiml;
 import { env, allowedUserIds } from './config/env.js';
 import { bot } from './bot/telegram.js';
 import { runAgentLoop } from './agent/loop.js';
-import { transcribeFile, generateVoice } from './agent/voice.js';
+import { transcribeFile, generateVoice, getDynamicVoiceTwiML } from './agent/voice.js';
 import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
+import { settingsDb } from './db/settings.js';
 import axios from 'axios';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -23,6 +24,17 @@ app.use((req, res, next) => {
     next();
 });
 
+// Helper for dynamic voice
+async function applyDynamicVoice(response: any, text: string) {
+    const settings = await settingsDb.getSettings();
+    const config = await getDynamicVoiceTwiML(text, settings, env.BASE_URL || '');
+    if (config.action === 'play') {
+        response.play(config.content);
+    } else {
+        response.say({ voice: config.twilioVoiceId || 'alice', language: 'es-MX' }, config.content);
+    }
+}
+
 app.get('/', (req, res) => res.send('NEXUS Voice Server is LIVE 🚀'));
 
 // Serve static audio
@@ -37,7 +49,7 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
         const from = req.body?.From || 'Unknown';
         console.log(`[Twilio] Call from ${from}`);
 
-        response.say({ voice: 'alice', language: 'es-MX' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
+        await applyDynamicVoice(response, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
         response.record({
             action: '/api/twilio/voice-process',
             maxLength: 30,
@@ -155,9 +167,8 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         });
         console.log(`[Twilio] AI Response: ${aiResponse}`);
 
-        console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio...`);
-        // Using Twilio's native Alice voice (or Polly) in Mexican Spanish to save the whole MP3 generation and public exposure latency
-        response.say({ voice: 'alice', language: 'es-MX' }, aiResponse);
+        console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio or selected API...`);
+        await applyDynamicVoice(response, aiResponse);
 
         // After playing the response, listen again
         response.record({
@@ -283,7 +294,7 @@ app.post('/voice-outbound-init', async (req, res) => {
             ? `Hola, te habla el asistente NEXUS. Disculpa la molestia, te llamo para lo siguiente: ${ctx.objective}. Por favor responde despues del tono.`
             : 'Hola, te habla el asistente NEXUS. Disculpa la molestia, necesito hacerte una consulta rapida. Por favor responde despues del tono.';
 
-        response.say({ voice: 'alice', language: 'es-MX' }, greeting);
+        await applyDynamicVoice(response, greeting);
         response.record({
             action: '/voice-process-outbound',
             maxLength: 30,
@@ -393,10 +404,10 @@ app.post('/voice-process-outbound', async (req, res) => {
         const missionComplete = aiResponse.includes('MISION_CUMPLIDA');
         const cleanResponse = aiResponse.replace(/MISION_CUMPLIDA/g, '').trim();
 
-        response.say({ voice: 'alice', language: 'es-MX' }, cleanResponse);
+        await applyDynamicVoice(response, cleanResponse);
 
         if (missionComplete) {
-            response.say({ voice: 'alice', language: 'es-MX' }, 'Gracias por tu tiempo. Hasta luego.');
+            await applyDynamicVoice(response, 'Gracias por tu tiempo. Hasta luego.');
             response.hangup();
 
             // Send summary to Telegram
@@ -498,6 +509,79 @@ async function sendOutboundSummary(ctx: import('./outbound/store.js').OutboundCa
         console.error('[Outbound] Failed to send Telegram summary:', err);
     }
 }
+
+// =============================================
+// DASHBOARD & CONFIGURATION
+// =============================================
+
+app.get('/dashboard', async (req, res) => {
+    const settings = await settingsDb.getSettings();
+    const html = `
+    <!DOCTYPE html>
+    <html lang="es">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>NEXUS | Voice Settings</title>
+        <style>
+            body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background-color: #f5f5f7; color: #1d1d1f; }
+            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+            h2 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
+            label { display: block; margin-bottom: 20px; font-weight: 500; }
+            select, input { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+            select:focus, input:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.1); }
+            .btn { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+            .btn:hover { background: #0077ED; }
+            .note { font-size: 13px; color: #86868b; line-height: 1.4; margin-top: 20px; text-align: center; }
+        </style>
+    </head>
+    <body>
+        <div class="card">
+            <h2>🎙️ Central de Voz NEXUS</h2>
+            <form method="POST" action="/dashboard/save">
+                <label>
+                    Motor de Inteligencia Artificial para Voz:
+                    <select name="voiceEngine">
+                        <option value="twilio_basic" ${settings.voiceEngine === 'twilio_basic' ? 'selected' : ''}>Twilio Alice (Básico - $0.00/m)</option>
+                        <option value="twilio_neural" ${settings.voiceEngine === 'twilio_neural' ? 'selected' : ''}>Twilio Neural (Fluido - $0.01/m)</option>
+                        <option value="openai" ${settings.voiceEngine === 'openai' ? 'selected' : ''}>OpenAI TTS NOVA (Humano Premium - $0.01/m)</option>
+                        <option value="elevenlabs" ${settings.voiceEngine === 'elevenlabs' ? 'selected' : ''}>ElevenLabs (Ultra Realista Actuado - $0.30/m)</option>
+                    </select>
+                </label>
+                
+                <label>
+                    Llave OpenAI API (Obligatorio si usas OpenAI):
+                    <input type="password" name="openAiKey" value="${settings.openAiKey}" placeholder="sk-proj-..." />
+                </label>
+
+                <label>
+                    Llave ElevenLabs API (Obligatorio si usas ElevenLabs):
+                    <input type="password" name="elevenLabsKey" value="${settings.elevenLabsKey}" placeholder="xi-..." />
+                </label>
+
+                <button type="submit" class="btn">Aplicar Cambios Globales</button>
+            </form>
+            <p class="note">Los cambios guardados aplicarán instantáneamente para todas las siguientes llamadas salientes y entrantes que responda NEXUS.</p>
+        </div>
+    </body>
+    </html>`;
+    res.send(html);
+});
+
+app.post('/dashboard/save', async (req, res) => {
+    try {
+        const { voiceEngine, openAiKey, elevenLabsKey } = req.body;
+        await settingsDb.saveSettings({
+            voiceEngine: voiceEngine as any,
+            openAiKey: openAiKey ? openAiKey.trim() : '',
+            elevenLabsKey: elevenLabsKey ? elevenLabsKey.trim() : ''
+        });
+        res.redirect('/dashboard');
+    } catch (err) {
+        console.error('Error saving dashboard info', err);
+        res.status(500).send('Error');
+    }
+});
 
 export async function startServer() {
     // Startup Check
