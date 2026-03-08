@@ -1,10 +1,10 @@
 import { chatCompletion } from './llm.js';
-import { toolsRegistry } from '../tools/index.js';
+import { toolsRegistry, ToolExecutionMeta } from '../tools/index.js';
 import { memoryDb } from '../db/memory.js';
 
 const MAX_ITERATIONS = 5;
 
-export async function runAgentLoop(threadId: string, userPrompt: string | any[], maxIterations = MAX_ITERATIONS, systemPrompt?: string): Promise<string> {
+export async function runAgentLoop(threadId: string, userPrompt: string | any[], maxIterations = MAX_ITERATIONS, systemPrompt?: string, meta?: ToolExecutionMeta): Promise<string> {
     // Add user prompt to memory
     await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt });
 
@@ -33,7 +33,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
                 try {
                     if (!tool) throw new Error(`Tool ${functionName} not found`);
                     const args = JSON.parse(toolCall.function.arguments || '{}');
-                    const result = await tool.execute(args);
+                    const result = await tool.execute(args, meta);
                     toolResultStr = JSON.stringify(result);
                 } catch (err: any) {
                     toolResultStr = JSON.stringify({ error: err.message });
