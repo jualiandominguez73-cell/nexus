@@ -80,8 +80,8 @@ export const memoryDb = {
 
     return snapshot.docs.map(doc => {
       const data = doc.data();
-      // Remove internal firestore timestamp before returning to agent
-      const { created_at, ...message } = data;
+      // Remove internal firestore timestamp and unsupported LLM fields before returning to agent
+      const { created_at, reasoning_details, ...message } = data;
       return message;
     });
   },
