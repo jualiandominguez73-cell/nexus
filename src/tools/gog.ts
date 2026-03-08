@@ -14,7 +14,7 @@ const gogTool: Tool = {
         properties: {
             command: {
                 type: 'string',
-                description: 'The full gog command to run, e.g., `gmail search newer_than:1d --max 5` or `gmail send --to="johndoe@gmail.com" --subject="Hello" --body="Hi there!"` (without the "gog " prefix)'
+                description: 'The full gog command to run, e.g., `gmail send --to="johndoe@gmail.com" --subject="Hello" --body="Hi there!"` (without the "gog " prefix). VERY IMPORTANT: DO NOT wrap the command in markdown blocks. Write the raw command string only. You MUST use double quotes for arguments.'
             }
         },
         required: ['command']
