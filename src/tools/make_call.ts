@@ -1,5 +1,5 @@
 import pkg from 'twilio';
-import { env } from '../config/env.js';
+import { env, allowedUserIds } from '../config/env.js';
 import { registerTool, Tool } from './index.js';
 import { setOutboundContext } from '../outbound/store.js';
 
@@ -29,9 +29,9 @@ const makeCallTool: Tool = {
             return { error: 'BASE_URL not configured. Set BASE_URL in .env to your public server URL (e.g., https://your-domain.ngrok.io)' };
         }
 
-        const telegramChatId = meta?.telegramChatId;
+        const telegramChatId = meta?.telegramChatId || allowedUserIds[0];
         if (!telegramChatId) {
-            return { error: 'Could not determine Telegram chat ID to report back. This tool must be called from a Telegram conversation.' };
+            return { error: 'Could not determine Telegram chat ID to report back.' };
         }
 
         try {
