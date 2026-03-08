@@ -205,21 +205,45 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
 
         const threadId = `twilio_wa_${from.replace(/whatsapp:/, '').replace(/\+/g, '')}`;
 
-        // Construct message. If it includes images, we format it for the vision model
+        // Construct message. If it includes images, we format it for the vision model, if audio we transcribe.
         let finalMessageContent: any = bodyText;
+        let audioTranscript = '';
 
         if (numMedia > 0) {
-            finalMessageContent = [{ type: 'text', text: bodyText || "Describe la imagen adjunta." }];
+            finalMessageContent = [];
+            if (bodyText) {
+                finalMessageContent.push({ type: 'text', text: bodyText });
+            }
 
             for (let i = 0; i < numMedia; i++) {
                 const mediaUrl = req.body[`MediaUrl${i}`];
-                const contentType = req.body[`MediaContentType${i}`];
+                const contentType = req.body[`MediaContentType${i}`] || '';
 
-                if (contentType?.startsWith('image/')) {
-                    // Adding image URL directly so LLM can fetch it, this usually works well with Groq/OpenRouter
+                if (contentType.startsWith('image/')) {
                     finalMessageContent.push({ type: 'image_url', image_url: { url: mediaUrl } });
+                } else if (contentType.startsWith('audio/') || contentType.startsWith('video/')) {
+                    console.log(`[Twilio WhatsApp] Downloading audio/video media: ${mediaUrl}`);
+                    try {
+                        const axiosConfig: any = { method: 'GET', url: mediaUrl, responseType: 'arraybuffer', timeout: 10000 };
+                        if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+                            axiosConfig.auth = { username: env.TWILIO_ACCOUNT_SID, password: env.TWILIO_AUTH_TOKEN };
+                        }
+                        const mediaRes = await axios(axiosConfig);
+                        const ext = contentType.includes('ogg') ? '.ogg' : contentType.includes('mp4') ? '.mp4' : '.wav';
+                        const tempPath = join(tmpdir(), `wa_audio_${Date.now()}${ext}`);
+                        writeFileSync(tempPath, Buffer.from(mediaRes.data));
+
+                        const text = await transcribeFile(tempPath);
+                        audioTranscript += `[Mensaje de Voz del Usuario transcribido]: "${text}"\n`;
+                    } catch (err) {
+                        console.error('[Twilio WhatsApp] Error downloading/transcribing audio:', err);
+                        audioTranscript += `[Error: El usuario envió un audio pero falló la transcripción]\n`;
+                    }
                 }
             }
+
+            if (audioTranscript) finalMessageContent.push({ type: 'text', text: audioTranscript });
+            if (finalMessageContent.length === 0) finalMessageContent = "Describe o procesa el archivo adjunto.";
         }
 
         // WhatsApp system prompt (similar to voice but formatted for texting)
