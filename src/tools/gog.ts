@@ -8,13 +8,13 @@ const execAsync = promisify(exec);
 
 const gogTool: Tool = {
     name: 'gog_command',
-    description: 'Execute gog CLI commands for Gmail, Calendar, Drive, Contacts, Sheets, and Docs. Commands follow the pattern: gog <service> <action> [args].',
+    description: 'Execute gog CLI commands for Gmail, Calendar, Drive, Contacts, Sheets, and Docs. Commands follow the pattern `gog <service> <action> [args]`. IMPORTANT: To send an email, strictly use this format: `gmail send --to="correo@destinatario.com" --subject="El Asunto" --body="El contenido del mensaje"`. Do NOT say you cannot send emails; use the tool.',
     parameters: {
         type: 'object',
         properties: {
             command: {
                 type: 'string',
-                description: 'The full gog command to run, e.g., "gmail search newer_than:1d --max 5" (without the "gog " prefix)'
+                description: 'The full gog command to run, e.g., `gmail search newer_than:1d --max 5` or `gmail send --to="johndoe@gmail.com" --subject="Hello" --body="Hi there!"` (without the "gog " prefix)'
             }
         },
         required: ['command']
