@@ -12,7 +12,10 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
         const messages = await memoryDb.getMessages(threadId);
 
         // Core instructions that should NEVER be overridden by custom channel prompts
-        const coreInstructions = '\n\nYou HAVE tools to execute real-world actions like sending emails, sending WhatsApps, and making phone calls. DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.\n\n[AGENDA DE CONTACTOS]\n- Noe (o Noé): +526562173335\n- Usa esta agenda para deducir el número de teléfono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre sin darte su número.';
+        const now = new Date();
+        const currentTimeString = now.toLocaleString('es-MX', { timeZone: 'America/Mexico_City', dateStyle: 'full', timeStyle: 'medium' });
+
+        const coreInstructions = `\n\n[RELOJ INTERNO: ${currentTimeString}]. USA esta información siempre que el usuario hable del tiempo o de programar algo en el futuro.\n\nYou HAVE tools to execute real-world actions like sending emails, sending WhatsApps, making phone calls, and SCHEDULING FUTURE CALLS (schedule_call). DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.\n\n[AGENDA DE CONTACTOS]\n- Noe (o Noé): +526562173335\n- Usa esta agenda para deducir el número de teléfono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre sin darte su número.`;
 
         const basePrompt = systemPrompt
             ? systemPrompt + coreInstructions

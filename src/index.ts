@@ -8,11 +8,16 @@ async function bootstrap() {
     await import('./tools/get_current_time.js');
     await import('./tools/gog.js');
     await import('./tools/make_call.js');
+    await import('./tools/schedule_call.js');
     await import('./tools/send_whatsapp.js');
 
     // Start Express Server for Twilio
     const { startServer } = await import('./server.js');
     startServer();
+
+    // Start Cron Scheduler for background Tasks
+    const { startCron } = await import('./cron.js');
+    startCron();
 
     console.log("Connecting Telegram Bot in polling mode...");
 

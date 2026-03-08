@@ -26,7 +26,7 @@ const app = getApps().length === 0
   ? initializeApp({ credential: cert(serviceAccount) })
   : getApp();
 
-const db = getFirestore(app);
+export const db = getFirestore(app);
 
 export const memoryDb = {
   async createThread(threadId: string, userId: number) {
