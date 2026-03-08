@@ -9,7 +9,6 @@ async function bootstrap() {
     await import('./tools/gog.js');
     await import('./tools/make_call.js');
     await import('./tools/send_whatsapp.js');
-    await import('./tools/send_email.js');
 
     // Start Express Server for Twilio
     const { startServer } = await import('./server.js');
