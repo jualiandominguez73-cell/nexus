@@ -37,12 +37,11 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
         const from = req.body?.From || 'Unknown';
         console.log(`[Twilio] Call from ${from}`);
 
-        // MODO VERIFICACIÓN: No decir la bienvenida para que empiece a grabar a WhatsApp desde el segundo 0.
-        // response.say({ voice: 'alice', language: 'es-MX' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
+        response.say({ voice: 'alice', language: 'es-MX' }, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
         response.record({
             action: '/api/twilio/voice-process',
             maxLength: 30,
-            playBeep: false // Sin tono para no confundir al robot de Meta
+            playBeep: true
         });
 
         res.type('text/xml');
@@ -402,7 +401,7 @@ app.post('/voice-process-outbound', async (req, res) => {
         const callSid = req.body?.CallSid;
         const ctx = callSid ? getOutboundContext(callSid) : undefined;
         if (ctx) {
-            sendOutboundSummary(ctx, 'Error durante la llamada').catch(() => {});
+            sendOutboundSummary(ctx, 'Error durante la llamada').catch(() => { });
         }
     }
 });
@@ -420,9 +419,9 @@ app.post('/voice-outbound-status', async (req, res) => {
             // Call didn't connect or ended without conversation
             const reason = callStatus === 'busy' ? 'Linea ocupada'
                 : callStatus === 'no-answer' ? 'No contestaron'
-                : callStatus === 'failed' ? 'Llamada fallida'
-                : callStatus === 'canceled' ? 'Llamada cancelada'
-                : 'Llamada terminada sin conversacion';
+                    : callStatus === 'failed' ? 'Llamada fallida'
+                        : callStatus === 'canceled' ? 'Llamada cancelada'
+                            : 'Llamada terminada sin conversacion';
 
             await sendOutboundSummary(ctx, reason).catch(err =>
                 console.error('[Outbound Status] Error sending summary:', err)
