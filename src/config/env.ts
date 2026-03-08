@@ -21,6 +21,8 @@ const envSchema = z.object({
     TWILIO_PHONE_NUMBER: z.string().optional(),
     TWILIO_WHATSAPP_NUMBER: z.string().optional(),
     BASE_URL: z.string().optional(),
+    GMAIL_USER: z.string().optional(),
+    GMAIL_APP_PASSWORD: z.string().optional(),
 });
 
 // Validate env vars

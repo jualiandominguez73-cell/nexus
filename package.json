@@ -19,11 +19,13 @@
     "grammy": "^1.31.2",
     "groq-sdk": "^0.8.0",
     "node-gtts": "^2.0.2",
+    "nodemailer": "^8.0.1",
     "twilio": "^5.12.2",
     "zod": "^3.23.8"
   },
   "devDependencies": {
     "@types/node": "^22.9.0",
+    "@types/nodemailer": "^7.0.11",
     "tsx": "^4.19.2",
     "typescript": "^5.6.3"
   }
