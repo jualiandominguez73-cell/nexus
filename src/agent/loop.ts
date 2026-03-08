@@ -15,7 +15,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
         const messagesToSent = [
             {
                 role: 'system',
-                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You HAVE tools to execute real-world actions like sending emails, sending WhatsApps, and making phone calls. DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.'
+                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You HAVE tools to execute real-world actions like sending emails, sending WhatsApps, and making phone calls. DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.\n\n[AGENDA DE CONTACTOS]\n- Noe (o Noé): +526562173335\n- Usa esta agenda para deducir el número de teléfono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre.'
             },
             ...messages
         ];
