@@ -15,7 +15,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
         const messagesToSent = [
             {
                 role: 'system',
-                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You can see images and listen to voice messages. For images, describe what you see in detail if asked. Keep answers helpful and concise.'
+                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You HAVE tools to execute real-world actions like sending emails, sending WhatsApps, and making phone calls. DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.'
             },
             ...messages
         ];
