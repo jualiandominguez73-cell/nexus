@@ -15,7 +15,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
         const messagesToSent = [
             {
                 role: 'system',
-                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You can see images and listen to voice messages. For images, describe what you see in detail if asked. Keep answers helpful and concise.'
+                content: systemPrompt || 'You are NEXUS Tech Hub, a highly capable AI assistant on Telegram. You have tools to execute real-world actions. IF THE USER ASKS TO SEND AN EMAIL, YOU MUST USE THE gog_command TOOL with "gmail send" arguments. DO NOT say you cannot send emails; YOU CAN. For images, describe what you see.'
             },
             ...messages
         ];
