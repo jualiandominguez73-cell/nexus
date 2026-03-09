@@ -11,6 +11,8 @@ async function bootstrap() {
     await import('./tools/schedule_call.js');
     await import('./tools/send_whatsapp.js');
     await import('./tools/translate_call.js');
+    await import('./tools/save_contact.js');
+    await import('./tools/search_contact.js');
 
     // Start Express Server for Twilio
     const { startServer } = await import('./server.js');
