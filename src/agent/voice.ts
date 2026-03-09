@@ -101,7 +101,7 @@ export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings
         // ElevenLabs TTS
         if (engine === 'elevenlabs' && settings.elevenLabsKey) {
             console.log(`[TTS] Generating voice via ElevenLabs...`);
-            const voiceId = 'pNInz6obpgDQGcFmaJcg'; // Rachel / Adam or similar
+            const voiceId = 'EXAVITQu4vr4xnSDxMaL'; // Sarah - Mature, Reassuring, Confident
             const res = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
                 text,
                 model_id: 'eleven_multilingual_v2'
