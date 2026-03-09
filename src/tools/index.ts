@@ -1,10 +1,6 @@
 export interface ToolExecutionMeta {
     telegramChatId?: number;
 }
-import './get_current_time.js';
-import './schedule_call.js';
-import './send_whatsapp.js';
-import './translate_call.js';
 
 export interface Tool {
     name: string;
@@ -33,3 +29,9 @@ export function getToolsForLLM() {
         }
     }));
 }
+
+// Side-effect imports to register tools
+import './get_current_time.js';
+import './schedule_call.js';
+import './send_whatsapp.js';
+import './translate_call.js';
