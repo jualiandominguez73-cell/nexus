@@ -13,10 +13,10 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
     const messages = originalMessages.map((msg, index) => {
         const newMsg = { ...msg };
 
-        // 1. Remove 'refusal' properties which cause Groq 400 Bad Request
-        if ('refusal' in newMsg) {
-            delete newMsg.refusal;
-        }
+        // 1. Remove properties which cause Groq 400 Bad Request
+        if ('refusal' in newMsg) delete newMsg.refusal;
+        if ('reasoning' in newMsg) delete newMsg.reasoning;
+        if ('provider' in newMsg) delete newMsg.provider;
 
         // 2. Flatten historical messages with images into plain text strings.
         // We only want to trigger the Vision model if the *latest* message has an image.
@@ -104,5 +104,16 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
     }
 
     const data = await response.json();
+
+    if (data.error) {
+        console.error(`[OpenRouter API Explicit Error]:`, JSON.stringify(data.error));
+        throw new Error(`OpenRouter API failed: ${data.error.message || 'Unknown error'}`);
+    }
+
+    if (!data.choices || data.choices.length === 0) {
+        console.error(`[OpenRouter API Empty Choices]:`, JSON.stringify(data));
+        throw new Error(`OpenRouter API devolvió una respuesta vacía o con formato inesperado.`);
+    }
+
     return data.choices[0].message;
 }
