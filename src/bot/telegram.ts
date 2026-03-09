@@ -132,3 +132,24 @@ bot.on('message:photo', async (ctx) => {
         await ctx.reply(`Lo siento, no pude procesar la imagen: ${error.message}`);
     }
 });
+
+bot.on('message:contact', async (ctx) => {
+    const userId = ctx.from!.id;
+    const threadId = `thread_${userId}`;
+    const contact = ctx.message.contact;
+
+    await memoryDb.createThread(threadId, userId);
+    await ctx.replyWithChatAction('typing');
+
+    try {
+        console.log(`[Contact] Processing contact from user ${userId}`);
+        const contactInfo = `[Contacto Compartido]\nNombre: ${contact.first_name} ${contact.last_name || ''}\nTeléfono: ${contact.phone_number}\n¿Qué quieres que haga con este contacto?`;
+
+        const responseText = await runAgentLoop(threadId, contactInfo, undefined, undefined, { telegramChatId: userId });
+        await ctx.reply(responseText);
+        console.log(`[Contact] Response sent.`);
+    } catch (error: any) {
+        console.error('[Contact Error]:', error);
+        await ctx.reply(`Lo siento, ocurrió un error al procesar el contacto: ${error.message}`);
+    }
+});

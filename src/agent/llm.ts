@@ -45,8 +45,8 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
         if (env.OPENROUTER_API_KEY) {
             console.log('[LLM] Vision detected. Using OpenRouter (Gemini)...');
             try {
-                // Remove tools from messages if we send them to Vision to avoid errors
-                return await chatCompletionOpenRouter(messages, null, 'google/gemini-2.0-flash-001');
+                // Pass tools because Gemini 2.0 Flash supports tool calling
+                return await chatCompletionOpenRouter(messages, tools, 'google/gemini-2.0-flash-001');
             } catch (orError: any) {
                 if (orError.message.includes('429') || orError.message.includes('Too Many Requests')) {
                     throw new Error("Límite de velocidad alcanzado en los modelos de visión (OpenRouter). Por favor, intenta de nuevo en un minuto.");

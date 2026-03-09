@@ -232,6 +232,19 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
 
                 if (contentType.startsWith('image/')) {
                     finalMessageContent.push({ type: 'image_url', image_url: { url: mediaUrl } });
+                } else if (contentType.includes('vcard')) {
+                    console.log(`[Twilio WhatsApp] Downloading vCard: ${mediaUrl}`);
+                    try {
+                        const axiosConfig: any = { method: 'GET', url: mediaUrl, timeout: 10000 };
+                        if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+                            axiosConfig.auth = { username: env.TWILIO_ACCOUNT_SID, password: env.TWILIO_AUTH_TOKEN };
+                        }
+                        const vcardRes = await axios(axiosConfig);
+                        audioTranscript += `[Contacto de WhatsApp Recibido]:\n${vcardRes.data}\n`;
+                    } catch (err) {
+                        console.error('[Twilio WhatsApp] Error downloading vCard:', err);
+                        audioTranscript += `[Error: El usuario envió un contacto pero falló la descarga]\n`;
+                    }
                 } else if (contentType.startsWith('audio/') || contentType.startsWith('video/')) {
                     console.log(`[Twilio WhatsApp] Downloading audio/video media: ${mediaUrl}`);
                     try {
