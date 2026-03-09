@@ -67,6 +67,23 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
     }
 });
 
+app.all('/api/twilio/announce-twiml', (req, res) => {
+    const action = req.query.action as string; // 'play' or 'say'
+    const content = req.query.content as string;
+    const voice = req.query.voice as string || 'alice';
+    const lang = req.query.lang as string || 'es-MX';
+
+    const response = new VoiceResponse();
+    if (action === 'play') {
+        response.play(content);
+    } else if (content) {
+        response.say({ voice: voice as any, language: lang as any }, content);
+    }
+
+    // An empty response if something fails
+    res.type('text/xml').send(response.toString());
+});
+
 app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
     try {
         const response = new VoiceResponse();

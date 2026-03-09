@@ -15,6 +15,7 @@ const twilioClient = pkg(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
 export function handleTwilioStream(twilioWs: any) {
     let callSid = "";
     let streamSid = "";
+    let conferenceName = "";
 
     // Audio Buffer State
     let audioChunks: Buffer[] = [];
@@ -42,7 +43,8 @@ export function handleTwilioStream(twilioWs: any) {
         if (msg.event === 'start') {
             streamSid = msg.start.streamSid;
             callSid = msg.start.callSid; // We need this to send announcements!
-            console.log(`[Groq Translator] Call started. Stream SID: ${streamSid}, CallSid: ${callSid}`);
+            conferenceName = msg.start.customParameters?.ConferenceName || '';
+            console.log(`[Groq Translator] Stream started. CallSid: ${callSid}, Conference: ${conferenceName}`);
         }
         else if (msg.event === 'media') {
             const payload = msg.media.payload;
@@ -80,7 +82,7 @@ export function handleTwilioStream(twilioWs: any) {
                     audioChunks = [];
 
                     // Run the transcription and translation asynchronously
-                    processPhrase(bufferToProcess, callSid).catch(err => {
+                    processPhrase(bufferToProcess, callSid, conferenceName).catch(err => {
                         console.error('[Groq Translator] Error processing phrase:', err);
                     });
                 }
@@ -97,7 +99,7 @@ export function handleTwilioStream(twilioWs: any) {
 }
 
 // Sub-routine: The full Pipeline (VAD -> Groq STT -> Groq LLM -> Twilio Announce)
-async function processPhrase(muLawBuffer: Buffer, callSid: string) {
+async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceName: string) {
     if (muLawBuffer.length < 8000) {
         // Less than 1 second of audio, probably a grunt or noise, ignore.
         console.log('[Groq Translator] Phrase too short, ignoring.');
@@ -143,40 +145,37 @@ async function processPhrase(muLawBuffer: Buffer, callSid: string) {
         // If it's a conference, "callSid" might refer to the leg. 
         // We will just use the call's TwiML update capability.
 
-        let twimlString = '';
-        if (voiceTwiML.action === 'play') {
-            twimlString = `<Response><Play>${voiceTwiML.content}</Play></Response>`;
-        } else {
-            twimlString = `<Response><Say voice="${voiceTwiML.twilioVoiceId || 'alice'}" language="es-MX">${voiceTwiML.content}</Say></Response>`;
+        // If we have a ConferenceName, we announce to the entire conference
+        if (conferenceName) {
+            console.log(`[Groq Translator] Announcing translation to conference: ${conferenceName}`);
+            // Find physical conference SID
+            const conferences = await twilioClient.conferences.list({ friendlyName: conferenceName, status: 'in-progress', limit: 1 });
+
+            if (conferences.length > 0) {
+                let announceUrl = `${env.BASE_URL}/api/twilio/announce-twiml?action=${voiceTwiML.action}&content=${encodeURIComponent(voiceTwiML.content)}`;
+                if (voiceTwiML.twilioVoiceId) {
+                    announceUrl += `&voice=${voiceTwiML.twilioVoiceId}`;
+                }
+
+                await twilioClient.conferences(conferences[0].sid).update({
+                    announceUrl: announceUrl
+                });
+            } else {
+                console.log(`[Groq Translator] Conference ${conferenceName} not found or ended.`);
+            }
+        } else if (callSid) {
+            // Normal 1-1 intercept injection (kills stream momentarily)
+            console.log(`[Groq Translator] Injecting voice into call: ${callSid}`);
+            const wsHost = env.BASE_URL ? new URL(env.BASE_URL).host : 'example.ngrok.io'; // Change to dynamic later if needed
+            await twilioClient.calls(callSid).update({
+                twiml: `
+                    <Response>
+                        ${voiceTwiML.action === 'play' ? `<Play>${voiceTwiML.content}</Play>` : `<Say voice="${voiceTwiML.twilioVoiceId || 'alice'}" language="es-MX">${voiceTwiML.content}</Say>`}
+                        <Connect><Stream url="wss://${wsHost}/api/twilio/stream" /></Connect>
+                    </Response>
+                `
+            });
         }
-
-        // We inject the audio by replacing the stream momentarily or creating an announcement
-        // Actually, updating the Call Twiml will kill the WebSocket stream!
-        // To prevent killing the stream, we inject audio over the WebSocket `media` directly if possible, OR
-        // Since the user is in a conference, we can Announce to the Call. Twilio allows `twilioClient.calls(callSid).update({twiml:...})`
-        // But let's build a backward-injection media packet to NOT interrupt the active WebSocket connection.
-
-        // However, converting mp3 -> ulaw to send back over WS is hard without ffmpeg.
-        // So we will just use Twilio's Call Update. Wait! `twilioClient.calls(callSid).update(...)` WILL STOP the `<Stream>`.
-        // Better: Assuming they are in a <Conference> (Fase 3), we can `announce` to the conference without killing it.
-        // But for now, we will just send it as an announcement to the Participant if we can, or just update the call.
-
-        // Wait, if it's a <Conference>, the CallSid of the stream belongs to NEXUS's leg.
-        // We can just update NEXUS's leg TwiML to Say the text, and since NEXUS is in the Conference, 
-        // everyone hears it! And the Stream will be re-established after Say.
-
-        // Safe play for Phase 2: Send TwiML back to the call leg.
-        // Actually, Twilio stream receives TwiML if we respond, no, just REST API.
-        console.log(`[Groq Translator] Injecting voice into call: ${callSid}`);
-        const wsHost = env.BASE_URL ? new URL(env.BASE_URL).host : 'example.ngrok.io'; // Change to dynamic later if needed
-        await twilioClient.calls(callSid).update({
-            twiml: `
-                <Response>
-                    ${voiceTwiML.action === 'play' ? `<Play>${voiceTwiML.content}</Play>` : `<Say voice="${voiceTwiML.twilioVoiceId || 'alice'}" language="es-MX">${voiceTwiML.content}</Say>`}
-                    <Connect><Stream url="wss://${wsHost}/api/twilio/stream" /></Connect>
-                </Response>
-            `
-        });
 
     } catch (err: any) {
         console.error('[Groq Translator Pipeline Error]:', err.message);

@@ -34,10 +34,10 @@ const translateCallTool: Tool = {
 
             const wsHostUrl = env.BASE_URL ? new URL(env.BASE_URL).host : 'example.ngrok.io';
 
-            // 1. We create the TwiML for both humans to join the conference
-            const joinConferenceTwiML = `
+            // 1. TwiML for the Foreigner (Normal Join)
+            const foreignerTwiML = `
                 <Response>
-                    <Say language="es-MX" voice="alice">Entrando a la sala de intérprete.</Say>
+                    <Say language="es-MX" voice="alice">Entrando a sala de traducción.</Say>
                     <Dial>
                         <Conference>
                             ${conferenceName}
@@ -46,42 +46,42 @@ const translateCallTool: Tool = {
                 </Response>
             `;
 
-            // 2. NEXUS calls you (The User) and puts you in the conference
-            console.log(`[TranslateTool] Calling User: ${args.userPhone}`);
-            await client.calls.create({
-                to: args.userPhone,
-                from: env.TWILIO_PHONE_NUMBER,
-                twiml: joinConferenceTwiML
-            });
+            // 2. TwiML for the User (Joins with Background Stream for the AI)
+            const userTwiML = `
+                <Response>
+                    <Say language="es-MX" voice="alice">Sala de traducción iniciada. Esperando a la otra parte.</Say>
+                    <Start>
+                        <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="both_tracks">
+                            <Parameter name="ConferenceName" value="${conferenceName}" />
+                        </Stream>
+                    </Start>
+                    <Dial>
+                        <Conference>
+                            ${conferenceName}
+                        </Conference>
+                    </Dial>
+                </Response>
+            `;
 
-            // 3. NEXUS calls the Foreigner and puts them in the same conference
+            // 3. NEXUS calls the Foreigner
             console.log(`[TranslateTool] Calling Foreigner: ${args.to}`);
             await client.calls.create({
                 to: args.to,
                 from: env.TWILIO_PHONE_NUMBER,
-                twiml: joinConferenceTwiML
+                twiml: foreignerTwiML
             });
 
-            // 4. NEXUS itself silently dials into the Conference and attaches the Translator WebSocket
-            console.log(`[TranslateTool] Injecting AI WebSocket to Room: ${conferenceName}`);
+            // 4. NEXUS calls you (The User) and attaches the AI spy stream
+            console.log(`[TranslateTool] Calling User: ${args.userPhone}`);
             await client.calls.create({
-                to: env.TWILIO_PHONE_NUMBER, // Dialing its own Twilio Number to join? 
+                to: args.userPhone,
                 from: env.TWILIO_PHONE_NUMBER,
-                twiml: `
-                    <Response>
-                        <Dial>
-                            <Conference statusCallbackEvent="leave" statusCallback="${env.BASE_URL}/api/twilio/conference-status">
-                                ${conferenceName}
-                            </Conference>
-                        </Dial>
-                        <Connect><Stream url="wss://${wsHostUrl}/api/twilio/stream" /></Connect>
-                    </Response>
-                `
+                twiml: userTwiML
             });
 
             return {
                 success: true,
-                message: `Perfecto. He marcado a tu celular (${args.userPhone}) y al contacto (${args.to}). En cuanto ambos contesten, la Inteligencia Artificial estará escuchando y traduciendo en la sala.`
+                message: `He marcado a tu celular (${args.userPhone}) y al contacto (${args.to}) en México. La IA escuchará la conferencia invisiblemente y lanzará las traducciones por el altavoz para que ambos escuchen.`
             };
         } catch (error: any) {
             console.error('[TranslateTool] Error:', error);
