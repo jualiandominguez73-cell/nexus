@@ -21,11 +21,15 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
         // 2. Flatten historical messages with images into plain text strings.
         // We only want to trigger the Vision model if the *latest* message has an image.
         if (index < originalMessages.length - 1 && Array.isArray(newMsg.content)) {
-            newMsg.content = newMsg.content.map((part: any) => {
+            const flattenedText = newMsg.content.map((part: any) => {
                 if (part.type === 'image_url') return '[Imagen Adjuntada Históricamente]';
                 if (part.type === 'text') return part.text;
                 return '';
             }).join('\n');
+
+            // Re-assign content to be just a flat string instead of an array of parts
+            // so we don't accidentally pass malformed media objects to LLMs
+            newMsg.content = flattenedText;
         }
 
         return newMsg;
