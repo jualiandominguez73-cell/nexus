@@ -83,14 +83,14 @@ export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings
         const publicUrl = `${baseUrl}/audio/${fileName}`;
 
         // OpenAI TTS
-        if (engine === 'openai' && settings.openAiKey) {
+        if (engine === 'openai' && env.OPENAI_API_KEY) {
             console.log(`[TTS] Generating voice via OpenAI...`);
             const res = await axios.post('https://api.openai.com/v1/audio/speech', {
                 model: 'tts-1',
                 input: text,
                 voice: 'nova', // Good neutral voice
             }, {
-                headers: { 'Authorization': `Bearer ${settings.openAiKey}` },
+                headers: { 'Authorization': `Bearer ${env.OPENAI_API_KEY}` },
                 responseType: 'arraybuffer',
                 timeout: 10000
             });
@@ -99,14 +99,14 @@ export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings
         }
 
         // ElevenLabs TTS
-        if (engine === 'elevenlabs' && settings.elevenLabsKey) {
+        if (engine === 'elevenlabs' && env.ELEVENLABS_API_KEY) {
             console.log(`[TTS] Generating voice via ElevenLabs...`);
             const voiceId = 'EXAVITQu4vr4xnSDxMaL'; // Sarah - Mature, Reassuring, Confident
             const res = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
                 text,
                 model_id: 'eleven_multilingual_v2'
             }, {
-                headers: { 'xi-api-key': settings.elevenLabsKey },
+                headers: { 'xi-api-key': env.ELEVENLABS_API_KEY },
                 responseType: 'arraybuffer',
                 timeout: 15000
             });

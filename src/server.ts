@@ -528,8 +528,8 @@ app.get('/dashboard', async (req, res) => {
             .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
             h2 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
             label { display: block; margin-bottom: 20px; font-weight: 500; }
-            select, input { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-            select:focus, input:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.1); }
+            select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
+            select:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.1); }
             .btn { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
             .btn:hover { background: #0077ED; }
             .note { font-size: 13px; color: #86868b; line-height: 1.4; margin-top: 20px; text-align: center; }
@@ -548,20 +548,10 @@ app.get('/dashboard', async (req, res) => {
                         <option value="elevenlabs" ${settings.voiceEngine === 'elevenlabs' ? 'selected' : ''}>ElevenLabs (Ultra Realista Actuado - $0.30/m)</option>
                     </select>
                 </label>
-                
-                <label>
-                    Llave OpenAI API (Obligatorio si usas OpenAI):
-                    <input type="password" name="openAiKey" value="${settings.openAiKey}" placeholder="sk-proj-..." />
-                </label>
-
-                <label>
-                    Llave ElevenLabs API (Obligatorio si usas ElevenLabs):
-                    <input type="password" name="elevenLabsKey" value="${settings.elevenLabsKey}" placeholder="xi-..." />
-                </label>
 
                 <button type="submit" class="btn">Aplicar Cambios Globales</button>
             </form>
-            <p class="note">Los cambios guardados aplicarán instantáneamente para todas las siguientes llamadas salientes y entrantes que responda NEXUS.</p>
+            <p class="note">Los cambios guardados aplicarán instantáneamente para todas las siguientes llamadas salientes y entrantes que responda NEXUS. *NOTA: Para OpenAI o ElevenLabs, asegúrate de haber colocado tus API Keys en las Variables de Entorno de Railway.</p>
         </div>
     </body>
     </html>`;
@@ -570,11 +560,9 @@ app.get('/dashboard', async (req, res) => {
 
 app.post('/dashboard/save', async (req, res) => {
     try {
-        const { voiceEngine, openAiKey, elevenLabsKey } = req.body;
+        const { voiceEngine } = req.body;
         await settingsDb.saveSettings({
-            voiceEngine: voiceEngine as any,
-            openAiKey: openAiKey ? openAiKey.trim() : '',
-            elevenLabsKey: elevenLabsKey ? elevenLabsKey.trim() : ''
+            voiceEngine: voiceEngine as any
         });
         res.redirect('/dashboard');
     } catch (err) {

@@ -3,14 +3,10 @@ import { env } from '../config/env.js';
 
 export interface VoiceSettings {
     voiceEngine: 'twilio_basic' | 'twilio_neural' | 'openai' | 'elevenlabs';
-    openAiKey: string;
-    elevenLabsKey: string;
 }
 
 const DEFAULT_SETTINGS: VoiceSettings = {
-    voiceEngine: 'twilio_basic',
-    openAiKey: env.OPENAI_API_KEY || '',
-    elevenLabsKey: env.ELEVENLABS_API_KEY || ''
+    voiceEngine: 'twilio_basic'
 };
 
 export const settingsDb = {
