@@ -1,4 +1,6 @@
 import express from 'express';
+import { createServer } from 'node:http';
+import { WebSocket, WebSocketServer } from 'ws';
 import pkg from 'twilio';
 const { twiml } = pkg;
 const { VoiceResponse, MessagingResponse } = twiml;
@@ -7,6 +9,7 @@ import { env, allowedUserIds } from './config/env.js';
 import { bot } from './bot/telegram.js';
 import { runAgentLoop } from './agent/loop.js';
 import { transcribeFile, generateVoice, getDynamicVoiceTwiML } from './agent/voice.js';
+import { handleTwilioStream } from './agent/translator.js';
 import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
 import { settingsDb } from './db/settings.js';
 import axios from 'axios';
@@ -593,5 +596,18 @@ export async function startServer() {
         console.log('[Server] GROQ_API_KEY is present.');
     }
 
-    app.listen(env.PORT, () => console.log(`[Server] Running on ${env.PORT}`));
+    const server = createServer(app);
+    const wss = new WebSocketServer({ server, path: '/api/twilio/stream' });
+
+    wss.on('connection', (ws: WebSocket) => {
+        // Hands off the websocket entirely to the translator module
+        // We will process all audio relay and AI generation there natively
+        handleTwilioStream(ws);
+
+        ws.on('close', () => {
+            console.log('[WebSocket] Connection closed via Client Request');
+        });
+    });
+
+    server.listen(env.PORT, () => console.log(`[Server] Running on ${env.PORT}`));
 }
