@@ -28,11 +28,30 @@ async function bootstrap() {
         console.error("Telegram bot runtime error:", err.message);
     });
 
-    await bot.start({
-        onStart: (botInfo) => {
-            console.log(`Bot @${botInfo.username} successfully started.`);
-            console.log(`Listening for messages from authorized users...`);
+    const startBotWithRetry = async (maxRetries = 10) => {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                await bot.start({
+                    onStart: (botInfo) => {
+                        console.log(`Bot @${botInfo.username} successfully started.`);
+                        console.log(`Listening for messages from authorized users...`);
+                    }
+                });
+                return; // successfully connected
+            } catch (err: any) {
+                if (err.error_code === 409 || (err.message && err.message.includes('409'))) {
+                    console.warn(`[Telegram] 409 Conflict: Old bot instance still polling. Railway zero-downtime deploy. Retrying in 3 seconds... (${i + 1}/${maxRetries})`);
+                    await new Promise(res => setTimeout(res, 3000));
+                } else {
+                    throw err; // Other errors are fatal
+                }
+            }
         }
+        console.error("Failed to start bot after maximum retries due to persistent 409 Conflict.");
+    };
+
+    startBotWithRetry().catch(err => {
+        console.error("Failed to start Telegram Bot:", err);
     });
 }
 
