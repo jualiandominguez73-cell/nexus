@@ -94,6 +94,8 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
     });
 
     if (!response.ok) {
+        const errBody = await response.text();
+        console.error(`[OpenRouter API Error] Response: ${errBody}`);
         throw new Error(`OpenRouter API failed: ${response.statusText}`);
     }
 
