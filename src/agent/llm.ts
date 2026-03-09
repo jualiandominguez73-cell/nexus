@@ -13,10 +13,32 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
     const messages = originalMessages.map((msg, index) => {
         const newMsg = { ...msg };
 
-        // 1. Remove properties which cause Groq 400 Bad Request
+        // 1. Remove properties which cause Groq/OpenRouter 400 Bad Request
         if ('refusal' in newMsg) delete newMsg.refusal;
         if ('reasoning' in newMsg) delete newMsg.reasoning;
         if ('provider' in newMsg) delete newMsg.provider;
+
+        // Ensure tool_calls are correctly shaped for OpenRouter
+        if (newMsg.role === 'assistant' && newMsg.tool_calls) {
+            newMsg.tool_calls = newMsg.tool_calls.map((tc: any) => ({
+                id: tc.id,
+                type: 'function',
+                function: {
+                    name: tc.name || tc.function?.name,
+                    arguments: typeof tc.arguments === 'string' ? tc.arguments : (tc.function?.arguments || '{}')
+                }
+            }));
+            if (!newMsg.content && newMsg.tool_calls.length > 0) {
+                newMsg.content = ""; // OpenRouter sometimes wants content even if tool_calls is present
+            }
+        }
+
+        // Ensure tool responses have string content
+        if (newMsg.role === 'tool') {
+            if (typeof newMsg.content !== 'string') {
+                newMsg.content = String(newMsg.content);
+            }
+        }
 
         // 2. Flatten historical messages with images into plain text strings.
         // We only want to trigger the Vision model if the *latest* message has an image.
