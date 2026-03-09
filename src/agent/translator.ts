@@ -1,6 +1,7 @@
 import { WebSocket as WsClient } from 'ws';
 import { env } from '../config/env.js';
-import { WaveFile } from 'wavefile';
+import pkgWave from 'wavefile';
+const { WaveFile } = pkgWave;
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, unlinkSync } from 'node:fs';
