@@ -28,44 +28,33 @@ async function bootstrap() {
         console.error("Telegram bot runtime error:", err.message);
     });
 
-    const startBotWithRetry = async (maxRetries = 10) => {
-        for (let i = 0; i < maxRetries; i++) {
-            try {
-                await bot.start({
-                    onStart: (botInfo) => {
-                        console.log(`Bot @${botInfo.username} successfully started.`);
-                        console.log(`Listening for messages from authorized users...`);
-                    }
-                });
-                return; // successfully connected
-            } catch (err: any) {
-                if (err.error_code === 409 || (err.message && err.message.includes('409'))) {
-                    console.warn(`[Telegram] 409 Conflict: Old bot instance still polling. Railway zero-downtime deploy. Retrying in 3 seconds... (${i + 1}/${maxRetries})`);
-                    await new Promise(res => setTimeout(res, 3000));
-                } else {
-                    throw err; // Other errors are fatal
-                }
-            }
-        }
-        console.error("Failed to start bot after maximum retries due to persistent 409 Conflict.");
-    };
+    // Drop any lingering webhook/polling session from a previous instance
+    console.log("[Telegram] Clearing old sessions with deleteWebhook...");
+    await bot.api.deleteWebhook({ drop_pending_updates: false });
 
-    startBotWithRetry().catch(err => {
-        console.error("Failed to start Telegram Bot:", err);
+    // Brief pause to let Telegram release the old getUpdates connection
+    await new Promise(res => setTimeout(res, 2000));
+
+    await bot.start({
+        onStart: (botInfo) => {
+            console.log(`Bot @${botInfo.username} successfully started.`);
+            console.log(`Listening for messages from authorized users...`);
+        }
     });
 }
 
-// Handle graceful shutdowns for PM2 or standard Ctrl+C
-process.once('SIGINT', () => {
-    console.log('\nStopping bot (SIGINT)...');
+// Handle graceful shutdowns for PM2, Railway, Docker or Ctrl+C
+const shutdown = (signal: string) => {
+    console.log(`\nStopping bot (${signal})...`);
     bot.stop();
-});
-process.once('SIGTERM', () => {
-    console.log('\nStopping bot (SIGTERM)...');
-    bot.stop();
-});
+    // Give grammy 3s to close the getUpdates long-poll before the process dies
+    setTimeout(() => process.exit(0), 3000);
+};
+process.once('SIGINT', () => shutdown('SIGINT'));
+process.once('SIGTERM', () => shutdown('SIGTERM'));
 
 bootstrap().catch(err => {
     console.error("Fatal error during bootstrap:", err);
-    process.exit(1);
+    // Don't exit immediately — let the event loop drain so Telegram releases the session
+    setTimeout(() => process.exit(1), 3000);
 });
