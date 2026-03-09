@@ -118,7 +118,13 @@ async function processPhrase(muLawBuffer: Buffer, callSid: string) {
 
         // 2. Translate text using your local Llama 3 / OpenRouter agent
         console.log('[Groq Translator] 2. Translating via LLM...');
-        const systemPrompt = `Eres el Intérprete Simultáneo NEXUS. Traduce el siguiente texto de forma directa, sin saludos, sin comillas, y sin agregar ninguna otra palabra más que la traducción pura. Si el texto está en Español, tradúcelo a Chino Mandarín. Si el texto está en Chino Mandarín u otro idioma extranjero, tradúcelo al Español. Da solo el texto final traducido comercialmente. Texto a traducir:`;
+        const systemPrompt = `Eres el Intérprete Simultáneo NEXUS. Traduce el siguiente texto de forma directa, sin saludos, sin comillas, y sin agregar ninguna otra palabra más que la traducción pura.
+        
+        REGLA DE IDIOMA:
+        - Si el texto está en ESPAÑOL: Tradúcelo al idioma de la persona extranjera con la que estoy hablando (ej. Chino, Coreano, Japonés, Inglés, etc - adivina por el contexto).
+        - Si el texto está en un IDIOMA EXTRANJERO: Tradúcelo siempre al ESPAÑOL.
+        
+        Da solo el texto final traducido comercialmente. Texto a traducir:`;
 
         // We use threadId "translator" to avoid polluting someone's memory, or we bypass memory.
         const translation = await runAgentLoop(`translator_tmp`, transcribedText, 1, systemPrompt);
