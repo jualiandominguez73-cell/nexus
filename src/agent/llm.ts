@@ -106,36 +106,42 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
         messages
     };
 
-    if (tools) {
+    if (tools && tools.length > 0) {
         payload.tools = tools;
+        // Some models require tool_choice to be provided if tools are present
+        payload.tool_choice = 'auto';
     }
 
-    const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
-        method: 'POST',
-        headers: {
-            'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
-            'Content-Type': 'application/json'
-        },
-        body: JSON.stringify(payload)
-    });
+    try {
+        const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify(payload)
+        });
 
-    if (!response.ok) {
-        const errBody = await response.text();
-        console.error(`[OpenRouter API Error] Response: ${errBody}`);
-        throw new Error(`OpenRouter API failed: ${response.statusText}`);
+        if (!response.ok) {
+            const errBody = await response.text();
+            console.error(`[OpenRouter API Error] Response: ${errBody}`);
+            throw new Error(`OpenRouter API failed: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+
+        if (data.error) {
+            console.error(`[OpenRouter API Explicit Error]:`, JSON.stringify(data.error));
+            throw new Error(`OpenRouter API failed: ${data.error.message || 'Unknown error'}`);
+        }
+
+        if (!data.choices || data.choices.length === 0) {
+            console.error(`[OpenRouter API Empty Choices]:`, JSON.stringify(data));
+            throw new Error(`OpenRouter API devolvió una respuesta vacía o con formato inesperado.`);
+        }
+
+        return data.choices[0].message;
+    } catch (err: any) {
+        throw new Error(`OpenRouter network or parsing error: ${err.message}`);
     }
-
-    const data = await response.json();
-
-    if (data.error) {
-        console.error(`[OpenRouter API Explicit Error]:`, JSON.stringify(data.error));
-        throw new Error(`OpenRouter API failed: ${data.error.message || 'Unknown error'}`);
-    }
-
-    if (!data.choices || data.choices.length === 0) {
-        console.error(`[OpenRouter API Empty Choices]:`, JSON.stringify(data));
-        throw new Error(`OpenRouter API devolvió una respuesta vacía o con formato inesperado.`);
-    }
-
-    return data.choices[0].message;
 }
