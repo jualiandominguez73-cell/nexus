@@ -125,6 +125,14 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
         if (!response.ok) {
             const errBody = await response.text();
             console.error(`[OpenRouter API Error] Response: ${errBody}`);
+
+            // If OpenRouter throws a 500 Internal Server error or a 400 Bad Request, it's often due to complex tool arrays the model doesn't support.
+            // Rescue the conversation by stripping tools and asking for a plain text answer.
+            if ((response.status === 500 || response.status === 400) && tools && tools.length > 0) {
+                console.warn(`[OpenRouter API] Error ${response.status}. Retrying as plain text without tools...`);
+                return await chatCompletionOpenRouter(messages, null, modelOverride);
+            }
+
             throw new Error(`OpenRouter API failed: ${response.statusText}`);
         }
 
