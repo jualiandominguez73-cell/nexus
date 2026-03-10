@@ -131,6 +131,12 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
         const data = await response.json();
 
         if (data.error) {
+            // Check for OpenRouter format hallucinations where the model used XML instead of JSON for tools
+            if (data.error.code === 'tool_use_failed' && tools && tools.length > 0) {
+                console.warn(`[OpenRouter API] Model hallucinated tool formatting. Retrying without tools...`);
+                return await chatCompletionOpenRouter(messages, null, modelOverride);
+            }
+
             console.error(`[OpenRouter API Explicit Error]:`, JSON.stringify(data.error));
             throw new Error(`OpenRouter API failed: ${data.error.message || 'Unknown error'}`);
         }
