@@ -90,8 +90,9 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
             });
             return response.choices[0].message;
         } catch (error: any) {
-            console.warn('[LLM] Groq text failed. Attempting fallback...', error.message);
-            return await chatCompletionOpenRouter(messages, tools);
+            console.warn('[LLM] Groq text failed. Attempting fallback... Stripping tools to avoid OpenRouter 500 errors.', error.message);
+            // Completely strip out tools for the fallback, just answer in text
+            return await chatCompletionOpenRouter(messages, null);
         }
     } else {
         return await chatCompletionOpenRouter(messages, tools);
