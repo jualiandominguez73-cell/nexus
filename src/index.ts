@@ -35,12 +35,29 @@ async function bootstrap() {
     // Brief pause to let Telegram release the old getUpdates connection
     await new Promise(res => setTimeout(res, 2000));
 
-    await bot.start({
-        onStart: (botInfo) => {
-            console.log(`Bot @${botInfo.username} successfully started.`);
-            console.log(`Listening for messages from authorized users...`);
+    const startBotWithRetry = async (maxRetries = 15) => {
+        for (let i = 0; i < maxRetries; i++) {
+            try {
+                await bot.start({
+                    onStart: (botInfo) => {
+                        console.log(`Bot @${botInfo.username} successfully started.`);
+                        console.log(`Listening for messages from authorized users...`);
+                    }
+                });
+                return; // successfully connected
+            } catch (err: any) {
+                if (err.error_code === 409 || (err.message && err.message.includes('409'))) {
+                    console.warn(`[Telegram] 409 Conflict: Old bot instance still polling. Retrying in 3 seconds... (${i + 1}/${maxRetries})`);
+                    await new Promise(res => setTimeout(res, 3000));
+                } else {
+                    throw err; // Other errors are fatal
+                }
+            }
         }
-    });
+        console.error("Failed to start bot after maximum retries due to persistent 409 Conflict.");
+    };
+
+    await startBotWithRetry();
 }
 
 // Handle graceful shutdowns for PM2, Railway, Docker or Ctrl+C
