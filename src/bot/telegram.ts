@@ -2,9 +2,22 @@ import { Bot } from 'grammy';
 import { env, allowedUserIds } from '../config/env.js';
 import { memoryDb } from '../db/memory.js';
 import { runAgentLoop } from '../agent/loop.js';
+import { dispatch as routerDispatch } from '../agents/router.js';
 import { transcribeAudio, generateVoice } from '../agent/voice.js';
 import { InputFile } from 'grammy';
 import { unlink } from 'node:fs/promises';
+import { ToolExecutionMeta } from '../tools/index.js';
+
+const useMultiAgent = env.USE_MULTI_AGENT === 'true';
+
+/** Unified dispatcher: routes through multi-agent router or legacy monolithic loop */
+async function nexus(threadId: string, userPrompt: string | any[], meta?: ToolExecutionMeta, systemPrompt?: string): Promise<string> {
+    if (useMultiAgent) {
+        console.log('[Telegram] Using multi-agent router');
+        return routerDispatch(threadId, userPrompt, meta);
+    }
+    return runAgentLoop(threadId, userPrompt, undefined, systemPrompt, meta);
+}
 
 export const bot = new Bot(env.TELEGRAM_BOT_TOKEN);
 
@@ -47,7 +60,7 @@ bot.on('message:text', async (ctx) => {
     await ctx.replyWithChatAction('typing');
 
     try {
-        const response = await runAgentLoop(threadId, userText, undefined, undefined, { telegramChatId: userId });
+        const response = await nexus(threadId, userText, { telegramChatId: userId });
         await ctx.reply(response);
     } catch (error: any) {
         console.error('Agent loop error:', error);
@@ -79,7 +92,7 @@ bot.on('message:voice', async (ctx) => {
         console.log(`[Voice] Transcription: ${transcribedText}`);
         await ctx.reply(`Te he entendido: "${transcribedText}"\n\nDejame pensar...`);
 
-        const responseText = await runAgentLoop(threadId, transcribedText, undefined, undefined, { telegramChatId: userId });
+        const responseText = await nexus(threadId, transcribedText, { telegramChatId: userId });
         console.log(`[Voice] Agent response ready. Generating TTS...`);
 
         voicePath = await generateVoice(responseText);
@@ -123,7 +136,7 @@ bot.on('message:photo', async (ctx) => {
         ];
 
         console.log(`[Vision] Sending Base64 image to agent loop...`);
-        const responseText = await runAgentLoop(threadId, visionContent, undefined, undefined, { telegramChatId: userId });
+        const responseText = await nexus(threadId, visionContent, { telegramChatId: userId });
         await ctx.reply(responseText);
         console.log(`[Vision] Response sent.`);
 
@@ -145,7 +158,7 @@ bot.on('message:contact', async (ctx) => {
         console.log(`[Contact] Processing contact from user ${userId}`);
         const contactInfo = `[Contacto Compartido]\nNombre: ${contact.first_name} ${contact.last_name || ''}\nTeléfono: ${contact.phone_number}\n¿Qué quieres que haga con este contacto?`;
 
-        const responseText = await runAgentLoop(threadId, contactInfo, undefined, undefined, { telegramChatId: userId });
+        const responseText = await nexus(threadId, contactInfo, { telegramChatId: userId });
         await ctx.reply(responseText);
         console.log(`[Contact] Response sent.`);
     } catch (error: any) {

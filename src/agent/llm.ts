@@ -1,13 +1,25 @@
 import Groq from 'groq-sdk';
 import { env } from '../config/env.js';
 import { getToolsForLLM } from '../tools/index.js';
+import { llmSemaphore } from '../agents/concurrency.js';
 
 const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_VISION_MODEL = 'llama-3.2-11b-vision-preview';
 
-export async function chatCompletion(originalMessages: any[], useFallback = false) {
-    const tools = getToolsForLLM();
+export async function chatCompletion(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined) {
+    // Acquire semaphore slot (max 5 concurrent LLM calls)
+    await llmSemaphore.acquire();
+    try {
+        return await _chatCompletionInner(originalMessages, useFallback, toolsOverride);
+    } finally {
+        llmSemaphore.release();
+    }
+}
+
+async function _chatCompletionInner(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined) {
+    // If toolsOverride is provided, use it (multi-agent mode). Otherwise load all tools from registry (legacy mode).
+    const tools = toolsOverride !== undefined ? (toolsOverride && toolsOverride.length > 0 ? toolsOverride : undefined) : getToolsForLLM();
 
     // Sanitize messages to avoid Groq/OpenRouter errors
     const messages = originalMessages.map((msg, index) => {

@@ -8,9 +8,12 @@ const { VoiceResponse, MessagingResponse } = twiml;
 import { env, allowedUserIds } from './config/env.js';
 import { bot } from './bot/telegram.js';
 import { runAgentLoop } from './agent/loop.js';
+import { dispatch as routerDispatch } from './agents/router.js';
 import { transcribeFile, generateVoice, getDynamicVoiceTwiML } from './agent/voice.js';
 import { handleTwilioStream } from './agent/translator.js';
 import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
+
+const useMultiAgent = env.USE_MULTI_AGENT === 'true';
 import { settingsDb } from './db/settings.js';
 import axios from 'axios';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
@@ -293,7 +296,10 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         // WhatsApp system prompt (similar to voice but formatted for texting)
         const waSystemPrompt = 'Eres NEXUS, un asistente inteligente integrado en WhatsApp. Sé amable, conciso y responde como si estuvieras texteando con un amigo. Puedes usar emojis.';
 
-        const aiResponse = await runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt).catch(e => {
+        const aiResponse = await (useMultiAgent
+            ? routerDispatch(threadId, finalMessageContent)
+            : runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt)
+        ).catch(e => {
             console.error('[WhatsApp Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
         });

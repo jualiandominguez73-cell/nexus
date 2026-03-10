@@ -23,6 +23,8 @@ const envSchema = z.object({
     BASE_URL: z.string().optional(),
     OPENAI_API_KEY: z.string().optional(),
     ELEVENLABS_API_KEY: z.string().optional(),
+    USE_MULTI_AGENT: z.string().default('false'),
+    ROUTER_MODEL: z.string().default('llama-3.1-8b-instant'),
 });
 
 // Validate env vars

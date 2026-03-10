@@ -74,27 +74,65 @@ export const memoryDb = {
     }
   },
 
-  async getMessages(threadId: string): Promise<any[]> {
+  async getMessages(threadId: string, limit = 30): Promise<any[]> {
     const messagesRef = db.collection('threads').doc(threadId).collection('messages');
-    const snapshot = await messagesRef.orderBy('created_at', 'asc').get();
 
-    return snapshot.docs.map(doc => {
-      const data = doc.data();
-      // Remove internal firestore timestamp and unsupported LLM fields before returning to agent
-      const { created_at, reasoning_details, ...message } = data;
-      return message;
-    });
+    // Fetch only the last N messages (descending) then reverse to get chronological order.
+    // This avoids loading the entire conversation history on every LLM call.
+    const snapshot = await messagesRef.orderBy('created_at', 'desc').limit(limit).get();
+
+    const messages = snapshot.docs
+      .reverse() // Back to chronological order
+      .map(doc => {
+        const data = doc.data();
+        const { created_at, reasoning_details, ...message } = data;
+        return message;
+      });
+
+    // Safety: ensure we don't start with orphaned tool responses.
+    // If the first message is role:"tool", it means we cut in the middle of a
+    // tool-call sequence. Drop leading tool messages until we hit a non-tool message.
+    while (messages.length > 0 && messages[0].role === 'tool') {
+      messages.shift();
+    }
+
+    // Also drop a leading assistant message that has tool_calls but whose
+    // tool results got trimmed above (the LLM would error on dangling tool_calls).
+    if (
+      messages.length > 0 &&
+      messages[0].role === 'assistant' &&
+      messages[0].tool_calls?.length > 0
+    ) {
+      messages.shift();
+    }
+
+    return messages;
   },
 
   async clearHistory(threadId: string) {
+    // Clear the main thread
+    await this._deleteMessages(threadId);
+
+    // Clear all agent sub-threads (multi-agent mode)
+    const agentNames = ['chat', 'comms', 'voice', 'scheduler', 'workspace'];
+    for (const agent of agentNames) {
+      await this._deleteMessages(`${threadId}_${agent}`);
+    }
+  },
+
+  async _deleteMessages(threadId: string) {
     const messagesRef = db.collection('threads').doc(threadId).collection('messages');
     const snapshot = await messagesRef.get();
+    if (snapshot.empty) return;
 
-    const batch = db.batch();
-    snapshot.docs.forEach(doc => {
-      batch.delete(doc.ref);
-    });
-
-    await batch.commit();
+    // Firestore batch limit is 500 ops per batch
+    const batchSize = 450;
+    for (let i = 0; i < snapshot.docs.length; i += batchSize) {
+      const batch = db.batch();
+      snapshot.docs.slice(i, i + batchSize).forEach(doc => {
+        batch.delete(doc.ref);
+      });
+      await batch.commit();
+    }
   }
 };
