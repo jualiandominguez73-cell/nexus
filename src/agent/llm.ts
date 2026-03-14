@@ -11,7 +11,36 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
     // Acquire semaphore slot (max 5 concurrent LLM calls)
     await llmSemaphore.acquire();
     try {
-        return await _chatCompletionInner(originalMessages, useFallback, toolsOverride);
+        const responseMessage = await _chatCompletionInner(originalMessages, useFallback, toolsOverride);
+
+        // --- PATCH FOR LLAMA 3.3 TOOL HALLUCINATIONS ---
+        if (responseMessage.content && typeof responseMessage.content === 'string') {
+            const toolCodeRegex = /```tool_code\s*([\s\S]*?)\s*```/g;
+            let match;
+            while ((match = toolCodeRegex.exec(responseMessage.content)) !== null) {
+                try {
+                    const parsedStr = match[1].trim();
+                    const parsedTool = JSON.parse(parsedStr);
+                    if (parsedTool.type === 'function' && parsedTool.name) {
+                        if (!responseMessage.tool_calls) responseMessage.tool_calls = [];
+                        responseMessage.tool_calls.push({
+                            id: `call_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+                            type: 'function',
+                            function: {
+                                name: parsedTool.name,
+                                arguments: JSON.stringify(parsedTool.parameters || parsedTool.arguments || {})
+                            }
+                        });
+                        // Remove the hallucinated text
+                        responseMessage.content = responseMessage.content.replace(match[0], '').trim();
+                    }
+                } catch (e) {
+                    console.error('[LLM] Failed to parse hallucinated tool_code', e);
+                }
+            }
+        }
+
+        return responseMessage;
     } finally {
         llmSemaphore.release();
     }
