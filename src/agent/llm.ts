@@ -94,12 +94,15 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
 
     if (!useFallback) {
         try {
-            const response = await groq.chat.completions.create({
+            const reqBody: any = {
                 model: GROQ_MODEL,
                 messages,
-                tools,
-                tool_choice: 'auto'
-            });
+            };
+            if (tools && tools.length > 0) {
+                reqBody.tools = tools;
+                reqBody.tool_choice = 'auto';
+            }
+            const response = await groq.chat.completions.create(reqBody);
             return response.choices[0].message;
         } catch (error: any) {
             console.warn('[LLM] Groq text failed. Attempting fallback... Stripping tools to avoid OpenRouter 500 errors.', error.message);
@@ -114,9 +117,22 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
 async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverride?: string) {
     if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter API key not configured.');
 
+    // Clone messages to avoid mutating the original array
+    const sanitizedMessages = messages.map(m => ({ ...m }));
+
+    // If tools are explicitly disabled/stripped (e.g. during a fallback), forcefully tell the model NOT to hallucinate tools.
+    if (!tools || tools.length === 0) {
+        let sysMsg = sanitizedMessages.find(m => m.role === 'system');
+        if (sysMsg) {
+            sysMsg.content += '\n\n[ALERTA DEL SISTEMA]: TUS HERRAMIENTAS ESTAN DESACTIVADAS POR EMERGENCIA. ESTÁS EN MODO DE TEXTO PURO. NO INTENTES USAR ETIQUETAS XML, NI <function>, NI LLAMAR A HERRAMIENTAS. RESPONDE SÓLO CON TEXTO COLOQUIAL Y EXPLICA AL USUARIO QUE TUS SISTEMAS DE ACCION ESTAN EN MANTENIMIENTO POR AHORA.';
+        } else {
+            sanitizedMessages.unshift({ role: 'system', content: '[ALERTA DEL SISTEMA]: ESTÁS EN MODO DE TEXTO PURO. NO USAR HERRAMIENTAS.' });
+        }
+    }
+
     const payload: any = {
         model: modelOverride || env.OPENROUTER_MODEL,
-        messages
+        messages: sanitizedMessages
     };
 
     if (tools && tools.length > 0) {
@@ -139,6 +155,10 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
             const errBody = await response.text();
             console.error(`[OpenRouter API Error] Response: ${errBody}`);
 
+            if (response.status === 429) {
+                return { role: 'assistant', content: 'Lo siento, mis servidores de respaldo también están sobrecargados en este momento (Límite de tráfico). Por favor, intenta de nuevo en unos minutos.' };
+            }
+
             // If OpenRouter throws a 500 Internal Server error or a 400 Bad Request, it's often due to complex tool arrays the model doesn't support.
             // Rescue the conversation by stripping tools and asking for a plain text answer.
             if ((response.status === 500 || response.status === 400) && tools && tools.length > 0) {
@@ -152,10 +172,19 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
         const data = await response.json();
 
         if (data.error) {
+            if (data.error.code === 429) {
+                return { role: 'assistant', content: 'Lo siento, mis servidores de respaldo también están sobrecargados en este momento (Límite de tráfico). Por favor, intenta de nuevo en unos minutos.' };
+            }
+
             // Check for OpenRouter format hallucinations where the model used XML instead of JSON for tools
             if (data.error.code === 'tool_use_failed' && tools && tools.length > 0) {
                 console.warn(`[OpenRouter API] Model hallucinated tool formatting. Retrying without tools...`);
                 return await chatCompletionOpenRouter(messages, null, modelOverride);
+            }
+
+            // If it hallucinates tools when NONE were provided, just answer gracefully
+            if (data.error.code === 'tool_use_failed' || data.error.message?.includes('tool calls validator')) {
+                return { role: 'assistant', content: 'Hubo un fallo de comunicación interno intentando usar unas herramientas sin autorización. Estoy tratando de procesarlo, por favor dime de nuevo qué necesitas pero en otras palabras.' };
             }
 
             console.error(`[OpenRouter API Explicit Error]:`, JSON.stringify(data.error));
@@ -169,6 +198,9 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
 
         return data.choices[0].message;
     } catch (err: any) {
+        if (err.message.includes('Too Many Requests') || err.message.includes('429')) {
+            return { role: 'assistant', content: 'Lo siento, mis servidores de respaldo también están al máximo de su capacidad (Límite de Red). Dame unos momentos de respiro.' };
+        }
         throw new Error(`OpenRouter network or parsing error: ${err.message}`);
     }
 }

@@ -3,7 +3,7 @@ import { env } from '../config/env.js';
 import twilio from 'twilio';
 
 const tool = {
-    name: 'send_whatsapp_message',
+    name: 'send_whatsapp',
     description: 'Envia un mensaje de WhatsApp a un usuario dado. Debes proporcionar el numero de telefono internacional (con o sin +). SOLO USAR CUANDO EL USUARIO TE PIDA EXPLICITAMENTE QUE ENVÍES UN WHATSAPP.',
     parameters: {
         type: 'object',
