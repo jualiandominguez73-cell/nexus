@@ -1,6 +1,7 @@
 import { chatCompletion } from './llm.js';
 import { toolsRegistry, ToolExecutionMeta } from '../tools/index.js';
 import { memoryDb } from '../db/memory.js';
+import { tenantDb } from '../db/tenant.js';
 
 const MAX_ITERATIONS = 5;
 
@@ -17,9 +18,14 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
 
         const coreInstructions = `\n\n[RELOJ INTERNO: ${currentTimeString}]. USA esta información siempre que el usuario hable del tiempo o de programar algo en el futuro.\n\nYou HAVE tools to execute real-world actions like sending emails, sending WhatsApps, making phone calls, and SCHEDULING FUTURE CALLS (schedule_call). DO NOT say you cannot do these things; YOU CAN. ALWAYS use the appropriate tool when asked to communicate externally. Keep answers helpful and concise. Habla siempre en Español.\n\n[AGENDA DE CONTACTOS]\n- Noe (o Noé): +526562173335\n- Usa esta agenda para deducir el número de teléfono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre sin darte su número.`;
 
-        const basePrompt = systemPrompt
-            ? systemPrompt + coreInstructions
-            : 'You are NEXUS Tech Hub, a highly capable AI assistant.' + coreInstructions;
+        // Dynamic Tenant System Prompt Injection
+        const tenant = await tenantDb.getTenant(tenantId);
+
+        // 1. If explicit prompt is passed (e.g. from WhatsApp/Outbound calls), use it.
+        // 2. Otherwise use the Tenant's master prompt.
+        // 3. Otherwise use the default NEXUS prompt.
+        let finalSystemPrompt = systemPrompt || tenant?.systemPromptMaster || 'You are NEXUS Tech Hub, a highly capable AI assistant.';
+        const basePrompt = finalSystemPrompt + coreInstructions;
 
         // Inject system instructions dynamically
         const messagesToSent = [
@@ -30,7 +36,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
             ...messages
         ];
 
-        const assistantMessage = await chatCompletion(messagesToSent);
+        const assistantMessage = await chatCompletion(messagesToSent, false, undefined, tenantId);
         await memoryDb.addMessage(threadId, assistantMessage, tenantId);
 
         // If there are tool calls, execute them and continue the loop

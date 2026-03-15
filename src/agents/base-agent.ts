@@ -2,6 +2,7 @@ import { chatCompletion } from '../agent/llm.js';
 import { toolsRegistry, ToolExecutionMeta } from '../tools/index.js';
 import { memoryDb } from '../db/memory.js';
 import { contactsDb } from '../db/contacts.js';
+import { tenantDb } from '../db/tenant.js';
 import { withTimeout } from './concurrency.js';
 
 export interface AgentConfig {
@@ -62,7 +63,16 @@ export class BaseAgent {
             timeStyle: 'medium',
         });
 
-        let prompt = this.config.systemPrompt;
+        // Dynamic Tenant Injection
+        const tenant = await tenantDb.getTenant(tenantId);
+        let prompt = tenant?.systemPromptMaster || this.config.systemPrompt;
+
+        // Ensure agent-specific capability instructions remain
+        if (tenant?.systemPromptMaster && this.config.name !== 'chat') {
+            // Append the agent's core capabilities underneath the master prompt
+            prompt += `\n\n[CAPACIDADES ESPECIFICAS DEL AGENTE: ${this.config.name}]\n${this.config.systemPrompt}`;
+        }
+
         prompt += `\n\n[RELOJ INTERNO: ${timeStr}]`;
         prompt += `\nHabla siempre en Espanol.`;
 
@@ -131,7 +141,7 @@ export class BaseAgent {
                 ...messages,
             ];
 
-            const assistantMessage = await chatCompletion(fullMessages, false, tools);
+            const assistantMessage = await chatCompletion(fullMessages, false, tools, tenantId);
             await memoryDb.addMessage(threadId, assistantMessage, tenantId);
 
             if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
