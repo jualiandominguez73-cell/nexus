@@ -16,6 +16,7 @@ import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
 const useMultiAgent = env.USE_MULTI_AGENT === 'true';
 import { settingsDb } from './db/settings.js';
 import { tenantDb } from './db/tenant.js';
+import { adminDb as db } from './db/firebase.js';
 import axios from 'axios';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -614,9 +615,16 @@ app.get('/dashboard', async (req, res) => {
     const tenant = await tenantDb.getTenant(tenantId) || {
         name: 'Default Client',
         groqApiKey: '', openRouterApiKey: '', openAiApiKey: '', elevenLabsApiKey: '',
-        twilioPhoneNumber: '', twilioWhatsappNumber: '', systemPromptMaster: ''
+        twilioPhoneNumber: '', twilioWhatsappNumber: '', twilioAccountSid: '', twilioAuthToken: '', systemPromptMaster: ''
     };
 
+    // Fetch intelligent agenda/contacts for this tenant
+    const contactsSnapshot = await db.collectionGroup('contacts').get();
+    const tenantContacts = contactsSnapshot.docs
+        .filter(doc => (tenantId === 'default' && doc.ref.path.startsWith('users/')) || doc.ref.path.startsWith(`tenants/${tenantId}/`))
+        .map(doc => doc.data());
+
+    // HTML Rendering
     const html = `
     <!DOCTYPE html>
     <html lang="es">
@@ -637,6 +645,12 @@ app.get('/dashboard', async (req, res) => {
             .header-banner { background: #1d1d1f; color: white; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
             .header-banner h1 { margin: 0; font-size: 18px; }
             .badge { background: #0071e3; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; }
+            .contact-list { margin-top: 15px; border: 1px solid #d2d2d7; border-radius: 8px; overflow: hidden; }
+            .contact-item { padding: 12px; border-bottom: 1px solid #d2d2d7; display: flex; justify-content: space-between; align-items: center; background: #fafafa; }
+            .contact-item:last-child { border-bottom: none; }
+            .contact-item strong { color: #1d1d1f; }
+            .contact-item span { color: #86868b; font-size: 14px; }
+            .empty-state { padding: 20px; text-align: center; color: #86868b; font-size: 14px; }
         </style>
     </head>
     <body>
@@ -656,6 +670,28 @@ app.get('/dashboard', async (req, res) => {
                 <label>OpenRouter API Key (Modelos de Visión):
                     <input type="password" name="openRouterApiKey" value="${tenant.openRouterApiKey || ''}" placeholder="sk-or-v1-..." />
                 </label>
+            </div>
+
+            <div class="card">
+                <h2>📞 Telecomunicaciones (Twilio BYOK)</h2>
+                <p class="note" style="margin-top: -10px; margin-bottom: 20px;">Añade tus credenciales y números asignados para separar tu facturación telefónica.</p>
+
+                <div style="display: flex; gap: 10px;">
+                    <label style="flex: 1;">Twilio Account SID:
+                        <input type="password" name="twilioAccountSid" value="${tenant.twilioAccountSid || ''}" />
+                    </label>
+                    <label style="flex: 1;">Twilio Auth Token:
+                        <input type="password" name="twilioAuthToken" value="${tenant.twilioAuthToken || ''}" />
+                    </label>
+                </div>
+                <div style="display: flex; gap: 10px; margin-top: 10px;">
+                    <label style="flex: 1;">Twilio Phone Number (Voz):
+                        <input type="text" name="twilioPhoneNumber" value="${tenant.twilioPhoneNumber || ''}" placeholder="+1234..." />
+                    </label>
+                    <label style="flex: 1;">Twilio WhatsApp Number:
+                        <input type="text" name="twilioWhatsappNumber" value="${tenant.twilioWhatsappNumber || ''}" placeholder="+1234..." />
+                    </label>
+                </div>
             </div>
 
             <div class="card">
@@ -687,6 +723,23 @@ app.get('/dashboard', async (req, res) => {
 
             <button type="submit" class="btn">Guardar Configuración del Espacio de Trabajo</button>
         </form>
+
+        <div class="card">
+            <h2>👥 Agenda Inteligente de Contactos</h2>
+            <p class="note" style="margin-top: -10px; margin-bottom: 20px;">Contactos extraídos y categorizados automáticamente por la IA durante llamadas y chats telefónicos.</p>
+            
+            <div class="contact-list">
+                ${tenantContacts.length > 0
+            ? tenantContacts.map(c => `
+                        <div class="contact-item">
+                            <strong>${c.name.toUpperCase()}</strong>
+                            <span>📞 ${c.phone}</span>
+                        </div>
+                      `).join('')
+            : '<div class="empty-state">No hay contactos registrados aún en este Workspace.</div>'}
+            </div>
+        </div>
+
     </body>
     </html>`;
     res.send(html);
@@ -695,7 +748,10 @@ app.get('/dashboard', async (req, res) => {
 app.post('/dashboard/save', async (req, res) => {
     try {
         const tenantId = (req as any).tenantId;
-        const { voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey, systemPromptMaster } = req.body;
+        const {
+            voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey, systemPromptMaster,
+            twilioAccountSid, twilioAuthToken, twilioPhoneNumber, twilioWhatsappNumber
+        } = req.body;
 
         await settingsDb.saveSettings({
             voiceEngine: voiceEngine as any
@@ -706,7 +762,11 @@ app.post('/dashboard/save', async (req, res) => {
             openRouterApiKey: openRouterApiKey.trim() || undefined,
             openAiApiKey: openAiApiKey.trim() || undefined,
             elevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
-            systemPromptMaster: systemPromptMaster.trim() || undefined
+            systemPromptMaster: systemPromptMaster.trim() || undefined,
+            twilioAccountSid: twilioAccountSid.trim() || undefined,
+            twilioAuthToken: twilioAuthToken.trim() || undefined,
+            twilioPhoneNumber: twilioPhoneNumber.trim() || undefined,
+            twilioWhatsappNumber: twilioWhatsappNumber.trim() || undefined,
         });
 
         res.redirect('/dashboard');
