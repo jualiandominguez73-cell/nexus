@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { writeFileSync, unlinkSync } from 'node:fs';
 import { transcribeFile, getDynamicVoiceTwiML } from './voice.js';
-import { runAgentLoop } from './loop.js';
+import { chatCompletion } from './llm.js';
 import { settingsDb } from '../db/settings.js';
 import pkg from 'twilio';
 
@@ -21,7 +21,7 @@ export function handleTwilioStream(twilioWs: any) {
     let audioChunks: Buffer[] = [];
     let isSpeaking = false;
     let silenceStartMs = 0;
-    const SILENCE_THRESHOLD_MS = 1500; // 1.5 seconds of silence means end of phrase
+    const SILENCE_THRESHOLD_MS = 700; // Reduced from 1500 for faster real-time processing
 
     // Simple Voice Activity Detection (VAD) for Mu-Law
     function getSpeechEnergy(buffer: Buffer): number {
@@ -129,8 +129,12 @@ async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceNam
         
         Da solo el texto final traducido comercialmente. Texto a traducir:`;
 
-        // We use threadId "translator" to avoid polluting someone's memory, or we bypass memory.
-        const translation = await runAgentLoop(`translator_tmp`, transcribedText, 1, systemPrompt);
+        // Bypass memory and agent tools loop for pure translation speed
+        const responseMessage = await chatCompletion([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: transcribedText }
+        ], false, []); // Empty array disables tools
+        const translation = responseMessage.content;
         console.log(`[Groq Translator] 2. Translated: "${translation}"`);
 
         // 3. Play audio back directly to the Call

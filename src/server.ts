@@ -55,12 +55,20 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
         const from = req.body?.From || 'Unknown';
         console.log(`[Twilio] Call from ${from}`);
 
-        await applyDynamicVoice(response, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Te escucharé después del tono.');
-        response.record({
+        const gather = response.gather({
+            input: ['speech'],
             action: '/api/twilio/voice-process',
-            maxLength: 30,
-            playBeep: true
+            language: 'es-MX',
+            speechTimeout: 'auto',
+            bargeIn: true
         });
+
+        // This will now be interruptible (Barge-In)
+        await applyDynamicVoice(gather, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Háblame directamente.');
+
+        // If Gather times out and no speech is detected, we can force a record or just end it
+        response.say({ voice: 'alice', language: 'es-MX' }, 'No te escuché.');
+        response.hangup();
 
         res.type('text/xml');
         res.send(response.toString());
@@ -95,13 +103,14 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             return res.type('text/xml').send(response.toString());
         }
 
+        const speechResult = req.body.SpeechResult;
         const recordingUrl = req.body.RecordingUrl;
         const userId = req.body.From || 'UnknownUser';
         const threadId = `twilio_${userId.replace(/\+/g, '')}`;
 
-        if (!recordingUrl) {
-            console.error('[Twilio] No RecordingUrl in request body:', JSON.stringify(req.body));
-            response.say('No pude recibir tu mensaje de voz.');
+        if (!speechResult && !recordingUrl) {
+            console.error('[Twilio] No audio/speech input found:', JSON.stringify(req.body));
+            response.say('No pude escuchar tu mensaje o instrucción.');
             return res.type('text/xml').send(response.toString());
         }
 
@@ -110,58 +119,67 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             return res.type('text/xml').send(response.toString()); // Empty response
         }
 
-        console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
-        const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
+        let userText = '';
 
-        // Ensure URL has .wav extension for media download
-        const mediaUrl = recordingUrl.endsWith('.wav') || recordingUrl.endsWith('.mp3')
-            ? recordingUrl
-            : `${recordingUrl}.wav`;
+        if (speechResult) {
+            // New Gather Flow (Instant, No Beep, Twilio STT)
+            userText = speechResult;
+            console.log(`[Twilio Gather STT] Fast transcription: ${userText}`);
+        } else if (recordingUrl) {
+            // Legacy Record Flow (Groq Whisper Backup)
+            console.log(`[Twilio] Step 1: Downloading recording from ${recordingUrl}`);
+            const tempFilePath = join(tmpdir(), `twilio_${Date.now()}.wav`);
 
-        // Prepare axios config with optional Twilio Auth
-        const axiosConfig: any = {
-            method: 'GET',
-            url: mediaUrl,
-            responseType: 'arraybuffer',
-            timeout: 10000
-        };
+            // Ensure URL has .wav extension for media download
+            const mediaUrl = recordingUrl.endsWith('.wav') || recordingUrl.endsWith('.mp3')
+                ? recordingUrl
+                : `${recordingUrl}.wav`;
 
-        if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
-            console.log('[Twilio] Using Auth for recording download.');
-            axiosConfig.auth = {
-                username: env.TWILIO_ACCOUNT_SID,
-                password: env.TWILIO_AUTH_TOKEN
+            // Prepare axios config with optional Twilio Auth
+            const axiosConfig: any = {
+                method: 'GET',
+                url: mediaUrl,
+                responseType: 'arraybuffer',
+                timeout: 10000
             };
-        }
 
-        // Retry loop for 404 (recording might take a second to be ready)
-        let audioRes;
-        for (let attempt = 1; attempt <= 3; attempt++) {
-            try {
-                console.log(`[Twilio] Download attempt ${attempt}...`);
-                audioRes = await axios(axiosConfig);
-                break; // Success
-            } catch (err: any) {
-                if (err.response?.status === 404 && attempt < 3) {
-                    console.log(`[Twilio] Recording not ready (404). Retrying in 1.5s...`);
-                    await new Promise(resolve => setTimeout(resolve, 1500));
-                    continue;
-                }
-                throw err; // Permanent error or last attempt
+            if (env.TWILIO_ACCOUNT_SID && env.TWILIO_AUTH_TOKEN) {
+                console.log('[Twilio] Using Auth for recording download.');
+                axiosConfig.auth = {
+                    username: env.TWILIO_ACCOUNT_SID,
+                    password: env.TWILIO_AUTH_TOKEN
+                };
             }
+
+            // Retry loop for 404 (recording might take a second to be ready)
+            let audioRes;
+            for (let attempt = 1; attempt <= 3; attempt++) {
+                try {
+                    console.log(`[Twilio] Download attempt ${attempt}...`);
+                    audioRes = await axios(axiosConfig);
+                    break; // Success
+                } catch (err: any) {
+                    if (err.response?.status === 404 && attempt < 3) {
+                        console.log(`[Twilio] Recording not ready (404). Retrying in 1.5s...`);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                        continue;
+                    }
+                    throw err; // Permanent error or last attempt
+                }
+            }
+
+            if (!audioRes) throw new Error('Failed to download audio after retries');
+
+            writeFileSync(tempFilePath, Buffer.from(audioRes.data));
+            console.log(`[Twilio] Download complete: ${tempFilePath}`);
+
+            console.log(`[Twilio] Step 2: Transcribing audio file...`);
+            userText = await transcribeFile(tempFilePath).catch(e => {
+                console.error('[STT Failure]:', e);
+                throw new Error(`Transcription failed: ${e.message}`);
+            });
+            console.log(`[Twilio] Whisper said: ${userText}`);
         }
-
-        if (!audioRes) throw new Error('Failed to download audio after retries');
-
-        writeFileSync(tempFilePath, Buffer.from(audioRes.data));
-        console.log(`[Twilio] Download complete: ${tempFilePath}`);
-
-        console.log(`[Twilio] Step 2: Transcribing audio file...`);
-        const userText = await transcribeFile(tempFilePath).catch(e => {
-            console.error('[STT Failure]:', e);
-            throw new Error(`Transcription failed: ${e.message}`);
-        });
-        console.log(`[Twilio] User said: ${userText}`);
 
         // ====== TELEGRAM ALERT ======
         try {
@@ -175,8 +193,8 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         // ============================
 
         if (!userText || userText.trim() === '') {
-            response.say('No pude escucharte bien. ¿Puedes repetir?');
-            response.record({ action: '/api/twilio/voice-process', maxLength: 30, playBeep: true });
+            const gather = response.gather({ input: ['speech'], action: '/api/twilio/voice-process', language: 'es-MX', bargeIn: true, speechTimeout: 'auto' });
+            gather.say({ voice: 'alice', language: 'es-MX' }, 'No pude escucharte bien. ¿Puedes repetir?');
             return res.type('text/xml').send(response.toString());
         }
 
@@ -193,12 +211,17 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio or selected API...`);
         await applyDynamicVoice(response, aiResponse);
 
-        // After playing the response, listen again
-        response.record({
+        // After getting AI response, wait for the next input seamlessly without beep
+        const nextGather = response.gather({
+            input: ['speech'],
             action: '/api/twilio/voice-process',
-            maxLength: 30,
-            playBeep: true
+            language: 'es-MX',
+            speechTimeout: 'auto',
+            bargeIn: true
         });
+
+        // Dynamic voice inside Gather -> If user interrupts midway, the generated speech immediately cuts!
+        await applyDynamicVoice(nextGather, aiResponse);
 
         res.type('text/xml');
         res.send(response.toString());

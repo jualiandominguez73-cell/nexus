@@ -35,9 +35,16 @@ const translateCallTool: Tool = {
             const wsHostUrl = env.BASE_URL ? new URL(env.BASE_URL).host : 'example.ngrok.io';
 
             // 1. TwiML for the Foreigner (Normal Join)
+            // 1. TwiML for the Foreigner (Normal Join with an isolated listening stream)
             const foreignerTwiML = `
                 <Response>
                     <Say language="es-MX" voice="alice">Entrando a sala de traducción.</Say>
+                    <Start>
+                        <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="inbound_track">
+                            <Parameter name="ConferenceName" value="${conferenceName}" />
+                            <Parameter name="Role" value="Foreigner" />
+                        </Stream>
+                    </Start>
                     <Dial>
                         <Conference>
                             ${conferenceName}
@@ -46,13 +53,14 @@ const translateCallTool: Tool = {
                 </Response>
             `;
 
-            // 2. TwiML for the User (Joins with Background Stream for the AI)
+            // 2. TwiML for the User (Joins with their own isolated listening stream)
             const userTwiML = `
                 <Response>
                     <Say language="es-MX" voice="alice">Sala de traducción iniciada. Esperando a la otra parte.</Say>
                     <Start>
-                        <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="both_tracks">
+                        <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="inbound_track">
                             <Parameter name="ConferenceName" value="${conferenceName}" />
+                            <Parameter name="Role" value="User" />
                         </Stream>
                     </Start>
                     <Dial>

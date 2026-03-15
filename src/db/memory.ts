@@ -1,36 +1,13 @@
-import { initializeApp, cert, getApp, getApps } from 'firebase-admin/app';
-import { getFirestore, FieldValue } from 'firebase-admin/firestore';
-import { env } from '../config/env.js';
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-
-// Load service account (Try from JSON string first, then from file)
-let serviceAccount: any;
-
-if (env.FIREBASE_SERVICE_ACCOUNT_JSON) {
-  try {
-    serviceAccount = JSON.parse(env.FIREBASE_SERVICE_ACCOUNT_JSON);
-    console.log('Firebase initialized using FIREBASE_SERVICE_ACCOUNT_JSON environment variable.');
-  } catch (err) {
-    console.error('Error parsing FIREBASE_SERVICE_ACCOUNT_JSON:', err);
-    throw new Error('Invalid FIREBASE_SERVICE_ACCOUNT_JSON format');
-  }
-} else {
-  const serviceAccountPath = join(process.cwd(), env.FIREBASE_SERVICE_ACCOUNT_PATH);
-  console.log(`Loading Firebase from file: ${serviceAccountPath}`);
-  serviceAccount = JSON.parse(readFileSync(serviceAccountPath, 'utf8'));
-}
-
-// Initialize Firebase
-const app = getApps().length === 0
-  ? initializeApp({ credential: cert(serviceAccount) })
-  : getApp();
-
-export const db = getFirestore(app);
+import { adminDb as db, FieldValue } from './firebase.js';
 
 export const memoryDb = {
-  async createThread(threadId: string, userId: number) {
-    const threadRef = db.collection('threads').doc(threadId);
+  getThreadRef(threadId: string, tenantId: string) {
+    if (tenantId === 'default') return db.collection('threads').doc(threadId);
+    return db.collection('tenants').doc(tenantId).collection('threads').doc(threadId);
+  },
+
+  async createThread(threadId: string, userId: number, tenantId: string = 'default') {
+    const threadRef = this.getThreadRef(threadId, tenantId);
     try {
       await threadRef.update({
         user_id: userId,
@@ -48,8 +25,8 @@ export const memoryDb = {
     }
   },
 
-  async addMessage(threadId: string, messageParam: any) {
-    const threadRef = db.collection('threads').doc(threadId);
+  async addMessage(threadId: string, messageParam: any, tenantId: string = 'default') {
+    const threadRef = this.getThreadRef(threadId, tenantId);
     const messagesRef = threadRef.collection('messages');
 
     // Add message
@@ -74,8 +51,8 @@ export const memoryDb = {
     }
   },
 
-  async getMessages(threadId: string, limit = 30): Promise<any[]> {
-    const messagesRef = db.collection('threads').doc(threadId).collection('messages');
+  async getMessages(threadId: string, limit = 30, tenantId: string = 'default'): Promise<any[]> {
+    const messagesRef = this.getThreadRef(threadId, tenantId).collection('messages');
 
     // Fetch only the last N messages (descending) then reverse to get chronological order.
     // This avoids loading the entire conversation history on every LLM call.
@@ -109,19 +86,19 @@ export const memoryDb = {
     return messages;
   },
 
-  async clearHistory(threadId: string) {
+  async clearHistory(threadId: string, tenantId: string = 'default') {
     // Clear the main thread
-    await this._deleteMessages(threadId);
+    await this._deleteMessages(threadId, tenantId);
 
     // Clear all agent sub-threads (multi-agent mode)
     const agentNames = ['chat', 'comms', 'voice', 'scheduler', 'workspace'];
     for (const agent of agentNames) {
-      await this._deleteMessages(`${threadId}_${agent}`);
+      await this._deleteMessages(`${threadId}_${agent}`, tenantId);
     }
   },
 
-  async _deleteMessages(threadId: string) {
-    const messagesRef = db.collection('threads').doc(threadId).collection('messages');
+  async _deleteMessages(threadId: string, tenantId: string) {
+    const messagesRef = this.getThreadRef(threadId, tenantId).collection('messages');
     const snapshot = await messagesRef.get();
     if (snapshot.empty) return;
 

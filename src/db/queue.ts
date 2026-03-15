@@ -1,5 +1,4 @@
-import { db } from './memory.js';
-import { FieldValue } from 'firebase-admin/firestore';
+import { adminDb as db, FieldValue } from './firebase.js';
 
 export interface ScheduledTask {
     id?: string;
@@ -11,8 +10,13 @@ export interface ScheduledTask {
 }
 
 export const queueDb = {
-    async addTask(task: Omit<ScheduledTask, 'id' | 'createdAt' | 'status'>) {
-        const ref = db.collection('scheduled_tasks');
+    getQueueRef(tenantId: string = 'default') {
+        if (tenantId === 'default') return db.collection('scheduled_tasks');
+        return db.collection('tenants').doc(tenantId).collection('scheduled_tasks');
+    },
+
+    async addTask(task: Omit<ScheduledTask, 'id' | 'createdAt' | 'status'>, tenantId: string = 'default') {
+        const ref = this.getQueueRef(tenantId);
         const doc = await ref.add({
             ...task,
             status: 'pending',
@@ -21,9 +25,9 @@ export const queueDb = {
         return doc.id;
     },
 
-    async getPendingTasks(): Promise<ScheduledTask[]> {
+    async getPendingTasks(tenantId: string = 'default'): Promise<ScheduledTask[]> {
         const now = new Date();
-        const ref = db.collection('scheduled_tasks');
+        const ref = this.getQueueRef(tenantId);
         const snapshot = await ref
             .where('status', '==', 'pending')
             .where('scheduledTime', '<=', now)
@@ -39,8 +43,8 @@ export const queueDb = {
         });
     },
 
-    async markTaskComplete(taskId: string, status: 'completed' | 'failed' = 'completed') {
-        const ref = db.collection('scheduled_tasks').doc(taskId);
+    async markTaskComplete(taskId: string, status: 'completed' | 'failed' = 'completed', tenantId: string = 'default') {
+        const ref = this.getQueueRef(tenantId).doc(taskId);
         await ref.update({
             status,
             updatedAt: FieldValue.serverTimestamp()

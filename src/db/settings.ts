@@ -1,4 +1,4 @@
-import { db } from './memory.js';
+import { adminDb as db } from './firebase.js';
 import { env } from '../config/env.js';
 
 export interface VoiceSettings {
@@ -10,8 +10,10 @@ const DEFAULT_SETTINGS: VoiceSettings = {
 };
 
 export const settingsDb = {
-    async getSettings(): Promise<VoiceSettings> {
-        const ref = db.collection('system').doc('voice_settings');
+    async getSettings(tenantId: string = 'default'): Promise<VoiceSettings> {
+        const ref = tenantId === 'default'
+            ? db.collection('system').doc('voice_settings')
+            : db.collection('tenants').doc(tenantId).collection('config').doc('voice_settings');
         const doc = await ref.get();
         if (!doc.exists) {
             return DEFAULT_SETTINGS;
@@ -19,8 +21,10 @@ export const settingsDb = {
         return { ...DEFAULT_SETTINGS, ...doc.data() };
     },
 
-    async saveSettings(settings: Partial<VoiceSettings>): Promise<void> {
-        const ref = db.collection('system').doc('voice_settings');
+    async saveSettings(settings: Partial<VoiceSettings>, tenantId: string = 'default'): Promise<void> {
+        const ref = tenantId === 'default'
+            ? db.collection('system').doc('voice_settings')
+            : db.collection('tenants').doc(tenantId).collection('config').doc('voice_settings');
         await ref.set(settings, { merge: true });
     }
 };
