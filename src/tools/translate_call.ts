@@ -1,6 +1,7 @@
 import pkg from 'twilio';
 import { env, allowedUserIds } from '../config/env.js';
-import { registerTool, Tool } from './index.js';
+import { registerTool, Tool, ToolExecutionMeta } from './index.js';
+import { tenantDb } from '../db/tenant.js';
 
 const translateCallTool: Tool = {
     name: 'translate_call',
@@ -19,9 +20,16 @@ const translateCallTool: Tool = {
         },
         required: ['to', 'userPhone']
     },
-    execute: async (args: { to: string; userPhone: string }, meta?: { telegramChatId?: number }) => {
-        if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) {
-            return { error: 'Twilio credentials or phone number not configured.' };
+    execute: async (args: { to: string; userPhone: string }, meta?: ToolExecutionMeta) => {
+        const tenantId = meta?.tenantId || 'default';
+        const tenant = await tenantDb.getTenant(tenantId);
+
+        const accountSid = tenant?.twilioAccountSid || env.TWILIO_ACCOUNT_SID;
+        const authToken = tenant?.twilioAuthToken || env.TWILIO_AUTH_TOKEN;
+        const fromNumber = tenant?.twilioPhoneNumber || env.TWILIO_PHONE_NUMBER;
+
+        if (!accountSid || !authToken || !fromNumber) {
+            return { error: 'Twilio credentials or phone number not configured for this Tenant.' };
         }
 
         if (!env.BASE_URL) {
@@ -29,7 +37,7 @@ const translateCallTool: Tool = {
         }
 
         try {
-            const client = pkg(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+            const client = pkg(accountSid, authToken);
             const conferenceName = `Room_${Date.now()}`;
 
             const wsHostUrl = env.BASE_URL ? new URL(env.BASE_URL).host : 'example.ngrok.io';
@@ -43,6 +51,7 @@ const translateCallTool: Tool = {
                         <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="inbound_track">
                             <Parameter name="ConferenceName" value="${conferenceName}" />
                             <Parameter name="Role" value="Foreigner" />
+                            <Parameter name="TenantId" value="${tenantId}" />
                         </Stream>
                     </Start>
                     <Dial>
@@ -61,6 +70,7 @@ const translateCallTool: Tool = {
                         <Stream url="wss://${wsHostUrl}/api/twilio/stream" track="inbound_track">
                             <Parameter name="ConferenceName" value="${conferenceName}" />
                             <Parameter name="Role" value="User" />
+                            <Parameter name="TenantId" value="${tenantId}" />
                         </Stream>
                     </Start>
                     <Dial>
@@ -75,7 +85,7 @@ const translateCallTool: Tool = {
             console.log(`[TranslateTool] Calling Foreigner: ${args.to}`);
             await client.calls.create({
                 to: args.to,
-                from: env.TWILIO_PHONE_NUMBER,
+                from: fromNumber,
                 twiml: foreignerTwiML
             });
 
@@ -83,7 +93,7 @@ const translateCallTool: Tool = {
             console.log(`[TranslateTool] Calling User: ${args.userPhone}`);
             await client.calls.create({
                 to: args.userPhone,
-                from: env.TWILIO_PHONE_NUMBER,
+                from: fromNumber,
                 twiml: userTwiML
             });
 

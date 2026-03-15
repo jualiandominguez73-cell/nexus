@@ -48,8 +48,12 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
                 let toolResultStr = '';
                 try {
                     if (!tool) throw new Error(`Tool ${functionName} not found`);
+
+                    const executionMeta = meta || {};
+                    executionMeta.tenantId = tenantId;
+
                     const args = JSON.parse(toolCall.function.arguments || '{}');
-                    const result = await tool.execute(args, meta);
+                    const result = await tool.execute(args, executionMeta);
                     toolResultStr = JSON.stringify(result);
                 } catch (err: any) {
                     toolResultStr = JSON.stringify({ error: err.message });

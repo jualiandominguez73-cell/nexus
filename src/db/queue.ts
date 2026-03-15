@@ -7,6 +7,7 @@ export interface ScheduledTask {
     payload: any;
     status: 'pending' | 'completed' | 'failed';
     createdAt: Date;
+    tenantId?: string; // Automatically populated when querying across tenants
 }
 
 export const queueDb = {
@@ -38,7 +39,34 @@ export const queueDb = {
             return {
                 id: doc.id,
                 ...data,
-                scheduledTime: data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime)
+                scheduledTime: data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime),
+                tenantId
+            } as ScheduledTask;
+        });
+    },
+
+    async getAllPendingTasksAcrossTenants(): Promise<ScheduledTask[]> {
+        const now = new Date();
+        const snapshot = await db.collectionGroup('scheduled_tasks')
+            .where('status', '==', 'pending')
+            .where('scheduledTime', '<=', now)
+            .get();
+
+        return snapshot.docs.map(doc => {
+            const data = doc.data();
+            // Parse tenantId backwards from the path if possible, or assume it's stored in data
+            // Path structure for tenants: tenants/{tenantId}/scheduled_tasks/{taskId}
+            // Path structure for default: scheduled_tasks/{taskId}
+            let tenantId = 'default';
+            if (doc.ref.parent.parent && doc.ref.parent.parent.id !== 'tenants') {
+                tenantId = doc.ref.parent.parent.id;
+            }
+
+            return {
+                id: doc.id,
+                ...data,
+                scheduledTime: data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime),
+                tenantId
             } as ScheduledTask;
         });
     },

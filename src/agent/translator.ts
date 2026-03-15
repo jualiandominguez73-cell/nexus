@@ -9,13 +9,13 @@ import { transcribeFile, getDynamicVoiceTwiML } from './voice.js';
 import { chatCompletion } from './llm.js';
 import { settingsDb } from '../db/settings.js';
 import pkg from 'twilio';
-
-const twilioClient = pkg(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+import { tenantDb } from '../db/tenant.js';
 
 export function handleTwilioStream(twilioWs: any) {
     let callSid = "";
     let streamSid = "";
     let conferenceName = "";
+    let tenantId = "default";
 
     // Audio Buffer State
     let audioChunks: Buffer[] = [];
@@ -44,7 +44,10 @@ export function handleTwilioStream(twilioWs: any) {
             streamSid = msg.start.streamSid;
             callSid = msg.start.callSid; // We need this to send announcements!
             conferenceName = msg.start.customParameters?.ConferenceName || '';
-            console.log(`[Groq Translator] Stream started. CallSid: ${callSid}, Conference: ${conferenceName}`);
+            if (msg.start.customParameters?.TenantId) {
+                tenantId = msg.start.customParameters.TenantId;
+            }
+            console.log(`[Groq Translator] Stream started. CallSid: ${callSid}, Conference: ${conferenceName}, Tenant: ${tenantId}`);
         }
         else if (msg.event === 'media') {
             const payload = msg.media.payload;
@@ -82,7 +85,7 @@ export function handleTwilioStream(twilioWs: any) {
                     audioChunks = [];
 
                     // Run the transcription and translation asynchronously
-                    processPhrase(bufferToProcess, callSid, conferenceName).catch(err => {
+                    processPhrase(bufferToProcess, callSid, conferenceName, tenantId).catch(err => {
                         console.error('[Groq Translator] Error processing phrase:', err);
                     });
                 }
@@ -99,7 +102,7 @@ export function handleTwilioStream(twilioWs: any) {
 }
 
 // Sub-routine: The full Pipeline (VAD -> Groq STT -> Groq LLM -> Twilio Announce)
-async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceName: string) {
+async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceName: string, tenantId: string = 'default') {
     if (muLawBuffer.length < 8000) {
         // Less than 1 second of audio, probably a grunt or noise, ignore.
         console.log('[Groq Translator] Phrase too short, ignoring.');
@@ -113,8 +116,8 @@ async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceNam
         wav.fromScratch(1, 8000, '8m', muLawBuffer); // 1 channel, 8000Hz, 8-bit mu-law (8m)
         writeFileSync(tempWav, wav.toBuffer());
 
-        console.log('[Groq Translator] 1. Transcribing audio with Groq Whisper...');
-        const transcribedText = await transcribeFile(tempWav);
+        console.log(`[Groq Translator] 1. Transcribing audio with Groq Whisper (Tenant: ${tenantId})...`);
+        const transcribedText = await transcribeFile(tempWav, tenantId);
         console.log(`[Groq Translator] 1. Heard: "${transcribedText}"`);
 
         if (!transcribedText || transcribedText.trim() === '') return;
@@ -139,10 +142,17 @@ async function processPhrase(muLawBuffer: Buffer, callSid: string, conferenceNam
 
         // 3. Play audio back directly to the Call
         console.log('[Groq Translator] 3. Generating TTS Audio...');
-        const settings = await settingsDb.getSettings();
+        const settings = await settingsDb.getSettings(tenantId);
+        const tenant = await tenantDb.getTenant(tenantId);
 
         // Dynamic voice resolves to TwiML configs
-        const voiceTwiML = await getDynamicVoiceTwiML(translation, settings, env.BASE_URL || '');
+        const voiceTwiML = await getDynamicVoiceTwiML(translation, settings, env.BASE_URL || '', tenantId);
+
+        const accountSid = tenant?.twilioAccountSid || env.TWILIO_ACCOUNT_SID;
+        const authToken = tenant?.twilioAuthToken || env.TWILIO_AUTH_TOKEN;
+        if (!accountSid || !authToken) throw new Error('Twilio credentials missing for translator');
+
+        const twilioClient = pkg(accountSid, authToken);
 
         // We use Twilio REST API to forcefully inject an Announcement into the call or conference
         // Note: For simple 1-to-1 calls, we can update the Call with TwiML.

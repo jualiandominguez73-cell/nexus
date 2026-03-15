@@ -56,8 +56,8 @@ export function startCron() {
     // Check every 30 seconds
     intervalId = setInterval(async () => {
         try {
-            // Scheduled tasks
-            const pending = await queueDb.getPendingTasks();
+            // Scheduled tasks across all tenants
+            const pending = await queueDb.getAllPendingTasksAcrossTenants();
             if (pending.length > 0) {
                 console.log(`[Cron] Found ${pending.length} pending task(s). Executing...`);
                 for (const task of pending) {
@@ -67,15 +67,15 @@ export function startCron() {
                         if (task.type === 'make_call') {
                             const makeCallTool = toolsRegistry.get('make_call');
                             if (makeCallTool) {
-                                await makeCallTool.execute(task.payload, { telegramChatId: task.payload.telegramChatId });
-                                await queueDb.markTaskComplete(task.id!, 'completed');
+                                await makeCallTool.execute(task.payload, { telegramChatId: task.payload.telegramChatId, tenantId: task.tenantId });
+                                await queueDb.markTaskComplete(task.id!, 'completed', task.tenantId);
                             } else {
                                 console.error('[Cron] make_call tool not found in registry');
                             }
                         }
                     } catch (taskErr) {
                         console.error(`[Cron] Error executing task ${task.id}:`, taskErr);
-                        await queueDb.markTaskComplete(task.id!, 'failed');
+                        await queueDb.markTaskComplete(task.id!, 'failed', task.tenantId);
                     }
                 }
             }

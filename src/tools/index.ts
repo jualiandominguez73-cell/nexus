@@ -1,5 +1,6 @@
 export interface ToolExecutionMeta {
     telegramChatId?: number;
+    tenantId?: string;
 }
 
 export interface Tool {

@@ -1,7 +1,8 @@
 import pkg from 'twilio';
 import { env, allowedUserIds } from '../config/env.js';
-import { registerTool, Tool } from './index.js';
+import { registerTool, Tool, ToolExecutionMeta } from './index.js';
 import { setOutboundContext } from '../outbound/store.js';
+import { tenantDb } from '../db/tenant.js';
 
 const makeCallTool: Tool = {
     name: 'make_call',
@@ -20,9 +21,16 @@ const makeCallTool: Tool = {
         },
         required: ['to', 'objective']
     },
-    execute: async (args: { to: string; objective: string }, meta?: { telegramChatId?: number }) => {
-        if (!env.TWILIO_ACCOUNT_SID || !env.TWILIO_AUTH_TOKEN || !env.TWILIO_PHONE_NUMBER) {
-            return { error: 'Twilio credentials or phone number not configured. Set TWILIO_ACCOUNT_SID, TWILIO_AUTH_TOKEN, and TWILIO_PHONE_NUMBER in .env' };
+    execute: async (args: { to: string; objective: string }, meta?: ToolExecutionMeta) => {
+        const tenantId = meta?.tenantId || 'default';
+        const tenant = await tenantDb.getTenant(tenantId);
+
+        const accountSid = tenant?.twilioAccountSid || env.TWILIO_ACCOUNT_SID;
+        const authToken = tenant?.twilioAuthToken || env.TWILIO_AUTH_TOKEN;
+        const fromNumber = tenant?.twilioPhoneNumber || env.TWILIO_PHONE_NUMBER;
+
+        if (!accountSid || !authToken || !fromNumber) {
+            return { error: 'Las credenciales de Twilio o el número de teléfono no están configuradas para este Tenant ni en entorno global.' };
         }
 
         if (!env.BASE_URL) {
@@ -35,11 +43,11 @@ const makeCallTool: Tool = {
         }
 
         try {
-            const client = pkg(env.TWILIO_ACCOUNT_SID, env.TWILIO_AUTH_TOKEN);
+            const client = pkg(accountSid, authToken);
 
             const call = await client.calls.create({
                 to: args.to,
-                from: env.TWILIO_PHONE_NUMBER,
+                from: fromNumber,
                 url: `${env.BASE_URL}/voice-outbound-init`,
                 statusCallback: `${env.BASE_URL}/voice-outbound-status`,
                 statusCallbackEvent: ['completed'],
