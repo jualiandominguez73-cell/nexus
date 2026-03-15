@@ -19,7 +19,9 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
             let match;
             while ((match = toolCodeRegex.exec(responseMessage.content)) !== null) {
                 try {
-                    const parsedStr = match[1].trim();
+                    let parsedStr = match[1].trim();
+                    // Strip out </tool_code> if the model hallucinated XML inside the markdown block
+                    parsedStr = parsedStr.replace('</tool_code>', '').trim();
                     const parsedTool = JSON.parse(parsedStr);
                     if (parsedTool.type === 'function' && parsedTool.name) {
                         if (!responseMessage.tool_calls) responseMessage.tool_calls = [];
