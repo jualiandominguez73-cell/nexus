@@ -196,17 +196,18 @@ export async function dispatch(
     threadId: string,
     userPrompt: string | any[],
     meta?: ToolExecutionMeta,
-    systemPromptOverride?: string
+    systemPromptOverride?: string,
+    tenantId: string = 'default'
 ): Promise<string> {
     // If prompt has images, route to chat (vision is handled at LLM level)
     if (hasImage(userPrompt)) {
         console.log('[Router] Image detected, routing to chat agent');
-        return chatAgent.run(threadId, userPrompt, meta);
+        return chatAgent.run(threadId, userPrompt, meta, tenantId);
     }
 
     const userText = extractText(userPrompt);
     if (!userText.trim()) {
-        return chatAgent.run(threadId, userPrompt, meta);
+        return chatAgent.run(threadId, userPrompt, meta, tenantId);
     }
 
     // Step 1: Try keyword-based routing (free, instant, no tokens)
@@ -217,12 +218,12 @@ export async function dispatch(
     console.log(`[Router] ${method} → "${agentKey}" for: "${userText.substring(0, 80)}..."`);
 
     // Step 2: Run the agent
-    const response = await agents[agentKey].run(threadId, userPrompt, meta);
+    const response = await agents[agentKey].run(threadId, userPrompt, meta, tenantId);
 
     // Step 3: Re-routing check — if the agent couldn't help, try a different one
     if (needsReroute(response) && agentKey !== 'chat') {
         console.log(`[Router] Agent "${agentKey}" couldn't help. Re-routing to chat as fallback.`);
-        return chatAgent.run(threadId, userPrompt, meta);
+        return chatAgent.run(threadId, userPrompt, meta, tenantId);
     }
 
     return response;

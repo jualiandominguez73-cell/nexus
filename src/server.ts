@@ -15,6 +15,7 @@ import { getOutboundContext, deleteOutboundContext } from './outbound/store.js';
 
 const useMultiAgent = env.USE_MULTI_AGENT === 'true';
 import { settingsDb } from './db/settings.js';
+import { tenantDb } from './db/tenant.js';
 import axios from 'axios';
 import { copyFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join, basename } from 'node:path';
@@ -24,15 +25,42 @@ import { Buffer } from 'node:buffer';
 const app = express();
 app.use(express.urlencoded({ extended: false }));
 
-// Global Logging
-app.use((req, res, next) => {
-    console.log(`[HTTP] ${req.method} ${req.url}`);
+// Tenant Extraction & Global Logging Middleware
+app.use(async (req, res, next) => {
+    let tenantId = 'default';
+
+    // 1. Try to extract from Twilio's "To" parameter
+    const to = req.body?.To || req.query?.To;
+    if (to && typeof to === 'string') {
+        try {
+            const tenant = await tenantDb.findTenantByPhoneNumber(to);
+            if (tenant) tenantId = tenant.id;
+        } catch (e) {
+            console.error('[Middleware] Error locating tenant by phone:', e);
+        }
+    }
+
+    // 2. Fallback to Subdomain mapping
+    if (tenantId === 'default' && req.hostname) {
+        const parts = req.hostname.split('.');
+        if (parts.length >= 3 && parts[0] !== 'www') {
+            try {
+                const tenant = await tenantDb.getTenant(parts[0]);
+                if (tenant) tenantId = tenant.id;
+            } catch (e) {
+                console.error('[Middleware] Error locating tenant by hostname:', e);
+            }
+        }
+    }
+
+    (req as any).tenantId = tenantId;
+    console.log(`[HTTP] ${req.method} ${req.url} (Tenant: ${tenantId})`);
     next();
 });
 
 // Helper for dynamic voice
-async function applyDynamicVoice(response: any, text: string) {
-    const settings = await settingsDb.getSettings();
+async function applyDynamicVoice(response: any, text: string, tenantId: string = 'default') {
+    const settings = await settingsDb.getSettings(tenantId);
     const config = await getDynamicVoiceTwiML(text, settings, env.BASE_URL || '');
     if (config.action === 'play') {
         response.play(config.content);
@@ -64,7 +92,7 @@ app.all(['/voice', '/api/twilio', '/api/twilio/voice'], async (req, res) => {
         });
 
         // This will now be interruptible (Barge-In)
-        await applyDynamicVoice(gather, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Háblame directamente.');
+        await applyDynamicVoice(gather, 'Hola, soy NEXUS. ¿En qué puedo ayudarte? Háblame directamente.', (req as any).tenantId);
 
         // If Gather times out and no speech is detected, we can force a record or just end it
         response.say({ voice: 'alice', language: 'es-MX' }, 'No te escuché.');
@@ -202,14 +230,15 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         const voiceSystemPrompt = 'Eres NEXUS, un asistente por teléfono rápido y amable. Responde de forma muy breve y conversacional. No uses listas ni explicaciones largas. No asumas que quieren buscar información o correos a menos que lo digan explícitamente.';
 
         // Allow up to 3 iterations for telephone calls so it can use tools if requested, and then answer.
-        const aiResponse = await runAgentLoop(threadId, userText, 3, voiceSystemPrompt).catch(e => {
+        const tenantId = (req as any).tenantId;
+        const aiResponse = await runAgentLoop(threadId, userText, 3, voiceSystemPrompt, undefined, tenantId).catch(e => {
             console.error('[Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
         });
         console.log(`[Twilio] AI Response: ${aiResponse}`);
 
         console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio or selected API...`);
-        await applyDynamicVoice(response, aiResponse);
+        await applyDynamicVoice(response, aiResponse, tenantId);
 
         // After getting AI response, wait for the next input seamlessly without beep
         const nextGather = response.gather({
@@ -221,7 +250,7 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         });
 
         // Dynamic voice inside Gather -> If user interrupts midway, the generated speech immediately cuts!
-        await applyDynamicVoice(nextGather, aiResponse);
+        await applyDynamicVoice(nextGather, aiResponse, tenantId);
 
         res.type('text/xml');
         res.send(response.toString());
@@ -319,9 +348,10 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         // WhatsApp system prompt (similar to voice but formatted for texting)
         const waSystemPrompt = 'Eres NEXUS, un asistente inteligente integrado en WhatsApp. Sé amable, conciso y responde como si estuvieras texteando con un amigo. Puedes usar emojis.';
 
+        const tenantId = (req as any).tenantId;
         const aiResponse = await (useMultiAgent
-            ? routerDispatch(threadId, finalMessageContent)
-            : runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt)
+            ? routerDispatch(threadId, finalMessageContent, undefined, undefined, tenantId)
+            : runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt, undefined, tenantId)
         ).catch(e => {
             console.error('[WhatsApp Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
@@ -356,7 +386,8 @@ app.post('/voice-outbound-init', async (req, res) => {
             ? `Hola, te habla el asistente NEXUS. Disculpa la molestia, te llamo para lo siguiente: ${ctx.objective}. Por favor responde despues del tono.`
             : 'Hola, te habla el asistente NEXUS. Disculpa la molestia, necesito hacerte una consulta rapida. Por favor responde despues del tono.';
 
-        await applyDynamicVoice(response, greeting);
+        const tenantId = (req as any).tenantId;
+        await applyDynamicVoice(response, greeting, tenantId);
         response.record({
             action: '/voice-process-outbound',
             maxLength: 30,
@@ -458,7 +489,8 @@ app.post('/voice-process-outbound', async (req, res) => {
             'No uses listas, ni markdown. Habla como en una conversacion telefonica normal.',
         ].join(' ');
 
-        const aiResponse = await runAgentLoop(ctx.threadId, callerSaid, 3, outboundSystemPrompt);
+        const tenantId = (req as any).tenantId;
+        const aiResponse = await runAgentLoop(ctx.threadId, callerSaid, 3, outboundSystemPrompt, undefined, tenantId);
         console.log(`[Outbound] AI response: "${aiResponse}"`);
         ctx.conversationLog.push(`NEXUS: ${aiResponse}`);
 
@@ -466,10 +498,10 @@ app.post('/voice-process-outbound', async (req, res) => {
         const missionComplete = aiResponse.includes('MISION_CUMPLIDA');
         const cleanResponse = aiResponse.replace(/MISION_CUMPLIDA/g, '').trim();
 
-        await applyDynamicVoice(response, cleanResponse);
+        await applyDynamicVoice(response, cleanResponse, tenantId);
 
         if (missionComplete) {
-            await applyDynamicVoice(response, 'Gracias por tu tiempo. Hasta luego.');
+            await applyDynamicVoice(response, 'Gracias por tu tiempo. Hasta luego.', tenantId);
             response.hangup();
 
             // Send summary to Telegram

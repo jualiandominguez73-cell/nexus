@@ -54,7 +54,7 @@ export class BaseAgent {
     /**
      * Build the full system prompt with time context and optional contacts.
      */
-    protected async buildSystemPrompt(meta?: ToolExecutionMeta): Promise<string> {
+    protected async buildSystemPrompt(meta?: ToolExecutionMeta, tenantId: string = 'default'): Promise<string> {
         const now = new Date();
         const timeStr = now.toLocaleString('es-MX', {
             timeZone: 'America/Mexico_City',
@@ -69,7 +69,7 @@ export class BaseAgent {
         // Load contacts if available and agent has comms/voice tools
         if (meta?.telegramChatId && this.config.toolNames.length > 0) {
             try {
-                const contacts = await contactsDb.getAllContacts(meta.telegramChatId);
+                const contacts = await contactsDb.getAllContacts(meta.telegramChatId, tenantId);
                 if (contacts.length > 0) {
                     const contactList = contacts.map(c => `- ${c.name}: ${c.phone}`).join('\n');
                     prompt += `\n\n[AGENDA DE CONTACTOS]\n${contactList}\n- Usa esta agenda para deducir el numero de telefono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre.`;
@@ -89,12 +89,13 @@ export class BaseAgent {
     async run(
         baseThreadId: string,
         userPrompt: string | any[],
-        meta?: ToolExecutionMeta
+        meta?: ToolExecutionMeta,
+        tenantId: string = 'default'
     ): Promise<string> {
         const timeoutMs = this.config.timeoutMs ?? 30000;
         try {
             return await withTimeout(
-                this._runLoop(baseThreadId, userPrompt, meta),
+                this._runLoop(baseThreadId, userPrompt, meta, tenantId),
                 timeoutMs,
                 `Agent ${this.config.name}`
             );
@@ -110,19 +111,20 @@ export class BaseAgent {
     private async _runLoop(
         baseThreadId: string,
         userPrompt: string | any[],
-        meta?: ToolExecutionMeta
+        meta?: ToolExecutionMeta,
+        tenantId: string = 'default'
     ): Promise<string> {
         const threadId = `${baseThreadId}_${this.config.name}`;
-        const systemPrompt = await this.buildSystemPrompt(meta);
+        const systemPrompt = await this.buildSystemPrompt(meta, tenantId);
         const tools = this.getTools();
 
         console.log(`[${this.config.name}] Starting loop (tools: ${this.config.toolNames.length}, maxIter: ${this.config.maxIterations})`);
 
         // Store user message in this agent's thread
-        await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt });
+        await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt }, tenantId);
 
         for (let i = 0; i < this.config.maxIterations; i++) {
-            const messages = await memoryDb.getMessages(threadId);
+            const messages = await memoryDb.getMessages(threadId, 30, tenantId);
 
             const fullMessages = [
                 { role: 'system', content: systemPrompt },
@@ -130,7 +132,7 @@ export class BaseAgent {
             ];
 
             const assistantMessage = await chatCompletion(fullMessages, false, tools);
-            await memoryDb.addMessage(threadId, assistantMessage);
+            await memoryDb.addMessage(threadId, assistantMessage, tenantId);
 
             if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
                 for (const toolCall of assistantMessage.tool_calls) {
@@ -155,7 +157,7 @@ export class BaseAgent {
                         tool_call_id: toolCall.id,
                         name: functionName,
                         content: toolResultStr,
-                    });
+                    }, tenantId);
                 }
             } else {
                 const response = assistantMessage.content || 'No output generated.';

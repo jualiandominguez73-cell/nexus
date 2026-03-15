@@ -4,12 +4,12 @@ import { memoryDb } from '../db/memory.js';
 
 const MAX_ITERATIONS = 5;
 
-export async function runAgentLoop(threadId: string, userPrompt: string | any[], maxIterations = MAX_ITERATIONS, systemPrompt?: string, meta?: ToolExecutionMeta): Promise<string> {
+export async function runAgentLoop(threadId: string, userPrompt: string | any[], maxIterations = MAX_ITERATIONS, systemPrompt?: string, meta?: ToolExecutionMeta, tenantId: string = 'default'): Promise<string> {
     // Add user prompt to memory
-    await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt });
+    await memoryDb.addMessage(threadId, { role: 'user', content: userPrompt }, tenantId);
 
     for (let i = 0; i < maxIterations; i++) {
-        const messages = await memoryDb.getMessages(threadId);
+        const messages = await memoryDb.getMessages(threadId, 30, tenantId);
 
         // Core instructions that should NEVER be overridden by custom channel prompts
         const now = new Date();
@@ -31,7 +31,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
         ];
 
         const assistantMessage = await chatCompletion(messagesToSent);
-        await memoryDb.addMessage(threadId, assistantMessage);
+        await memoryDb.addMessage(threadId, assistantMessage, tenantId);
 
         // If there are tool calls, execute them and continue the loop
         if (assistantMessage.tool_calls && assistantMessage.tool_calls.length > 0) {
@@ -54,7 +54,7 @@ export async function runAgentLoop(threadId: string, userPrompt: string | any[],
                     tool_call_id: toolCall.id,
                     name: functionName,
                     content: toolResultStr
-                });
+                }, tenantId);
             }
             // Continue loop: the LLM will see the tool output on the next iteration
         } else {
