@@ -2,16 +2,16 @@ import Groq from 'groq-sdk';
 import { env } from '../config/env.js';
 import { getToolsForLLM } from '../tools/index.js';
 import { llmSemaphore } from '../agents/concurrency.js';
+import { tenantDb } from '../db/tenant.js';
 
-const groq = new Groq({ apiKey: env.GROQ_API_KEY });
 const GROQ_MODEL = 'llama-3.3-70b-versatile';
 const GROQ_VISION_MODEL = 'llama-3.2-11b-vision-preview';
 
-export async function chatCompletion(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined) {
+export async function chatCompletion(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined, tenantId: string = 'default') {
     // Acquire semaphore slot (max 5 concurrent LLM calls)
     await llmSemaphore.acquire();
     try {
-        const responseMessage = await _chatCompletionInner(originalMessages, useFallback, toolsOverride);
+        const responseMessage = await _chatCompletionInner(originalMessages, useFallback, toolsOverride, tenantId);
 
         // --- PATCH FOR LLAMA 3.3 TOOL HALLUCINATIONS ---
         if (responseMessage.content && typeof responseMessage.content === 'string') {
@@ -46,9 +46,15 @@ export async function chatCompletion(originalMessages: any[], useFallback = fals
     }
 }
 
-async function _chatCompletionInner(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined) {
+async function _chatCompletionInner(originalMessages: any[], useFallback = false, toolsOverride?: any[] | undefined, tenantId: string = 'default') {
     // If toolsOverride is provided, use it (multi-agent mode). Otherwise load all tools from registry (legacy mode).
     const tools = toolsOverride !== undefined ? (toolsOverride && toolsOverride.length > 0 ? toolsOverride : undefined) : getToolsForLLM();
+
+    // FETCH TENANT CONFIG
+    const tenant = await tenantDb.getTenant(tenantId);
+    const groqApiKey = tenant?.groqApiKey || env.GROQ_API_KEY;
+    const openRouterApiKey = tenant?.openRouterApiKey || env.OPENROUTER_API_KEY;
+    const groq = new Groq({ apiKey: groqApiKey });
 
     // Sanitize messages to avoid Groq/OpenRouter errors
     const messages = originalMessages.map((msg, index) => {
@@ -105,11 +111,11 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
 
     if (hasImage) {
         // Use Vision capable model - Groq vision is currently decommissioned, fallback directly to OpenRouter Gemini
-        if (env.OPENROUTER_API_KEY) {
+        if (openRouterApiKey) {
             console.log('[LLM] Vision detected. Using OpenRouter (Gemini)...');
             try {
                 // Pass tools because Gemini 2.0 Flash supports tool calling
-                return await chatCompletionOpenRouter(messages, tools, 'google/gemini-2.0-flash-001');
+                return await chatCompletionOpenRouter(messages, tools, openRouterApiKey, 'google/gemini-2.0-flash-001');
             } catch (orError: any) {
                 if (orError.message.includes('429') || orError.message.includes('Too Many Requests')) {
                     throw new Error("Límite de velocidad alcanzado en los modelos de visión (OpenRouter). Por favor, intenta de nuevo en un minuto.");
@@ -136,15 +142,15 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
         } catch (error: any) {
             console.warn('[LLM] Groq text failed. Attempting fallback... Stripping tools to avoid OpenRouter 500 errors.', error.message);
             // Completely strip out tools for the fallback, just answer in text
-            return await chatCompletionOpenRouter(messages, null);
+            return await chatCompletionOpenRouter(messages, null, openRouterApiKey);
         }
     } else {
-        return await chatCompletionOpenRouter(messages, tools);
+        return await chatCompletionOpenRouter(messages, tools, openRouterApiKey);
     }
 }
 
-async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverride?: string) {
-    if (!env.OPENROUTER_API_KEY) throw new Error('OpenRouter API key not configured.');
+async function chatCompletionOpenRouter(messages: any[], tools: any, apiKey?: string, modelOverride?: string) {
+    if (!apiKey) throw new Error('OpenRouter API key not configured for this tenant.');
 
     // Clone messages to avoid mutating the original array
     const sanitizedMessages = messages.map(m => ({ ...m }));
@@ -174,7 +180,7 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
         const response = await fetch('https://openrouter.ai/api/v1/chat/completions', {
             method: 'POST',
             headers: {
-                'Authorization': `Bearer ${env.OPENROUTER_API_KEY}`,
+                'Authorization': `Bearer ${apiKey}`,
                 'Content-Type': 'application/json'
             },
             body: JSON.stringify(payload)
@@ -192,7 +198,7 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
             // Rescue the conversation by stripping tools and asking for a plain text answer.
             if ((response.status === 500 || response.status === 400) && tools && tools.length > 0) {
                 console.warn(`[OpenRouter API] Error ${response.status}. Retrying as plain text without tools...`);
-                return await chatCompletionOpenRouter(messages, null, modelOverride);
+                return await chatCompletionOpenRouter(messages, null, apiKey, modelOverride);
             }
 
             throw new Error(`OpenRouter API failed: ${response.statusText}`);
@@ -208,7 +214,7 @@ async function chatCompletionOpenRouter(messages: any[], tools: any, modelOverri
             // Check for OpenRouter format hallucinations where the model used XML instead of JSON for tools
             if (data.error.code === 'tool_use_failed' && tools && tools.length > 0) {
                 console.warn(`[OpenRouter API] Model hallucinated tool formatting. Retrying without tools...`);
-                return await chatCompletionOpenRouter(messages, null, modelOverride);
+                return await chatCompletionOpenRouter(messages, null, apiKey, modelOverride);
             }
 
             // If it hallucinates tools when NONE were provided, just answer gracefully

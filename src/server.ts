@@ -61,7 +61,7 @@ app.use(async (req, res, next) => {
 // Helper for dynamic voice
 async function applyDynamicVoice(response: any, text: string, tenantId: string = 'default') {
     const settings = await settingsDb.getSettings(tenantId);
-    const config = await getDynamicVoiceTwiML(text, settings, env.BASE_URL || '');
+    const config = await getDynamicVoiceTwiML(text, settings, env.BASE_URL || '', tenantId);
     if (config.action === 'play') {
         response.play(config.content);
     } else {
@@ -202,7 +202,7 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
             console.log(`[Twilio] Download complete: ${tempFilePath}`);
 
             console.log(`[Twilio] Step 2: Transcribing audio file...`);
-            userText = await transcribeFile(tempFilePath).catch(e => {
+            userText = await transcribeFile(tempFilePath, (req as any).tenantId).catch(e => {
                 console.error('[STT Failure]:', e);
                 throw new Error(`Transcription failed: ${e.message}`);
             });
@@ -332,7 +332,7 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
                         const tempPath = join(tmpdir(), `wa_audio_${Date.now()}${ext}`);
                         writeFileSync(tempPath, Buffer.from(mediaRes.data));
 
-                        const text = await transcribeFile(tempPath);
+                        const text = await transcribeFile(tempPath, (req as any).tenantId);
                         audioTranscript += `[Mensaje de Voz del Usuario transcribido]: "${text}"\n`;
                     } catch (err) {
                         console.error('[Twilio WhatsApp] Error downloading/transcribing audio:', err);
@@ -464,7 +464,7 @@ app.post('/voice-process-outbound', async (req, res) => {
 
         writeFileSync(tempFilePath, Buffer.from(audioRes.data));
 
-        const callerSaid = await transcribeFile(tempFilePath).catch(e => {
+        const callerSaid = await transcribeFile(tempFilePath, (req as any).tenantId).catch(e => {
             console.error('[Outbound STT Failure]:', e);
             throw new Error(`Transcription failed: ${e.message}`);
         });
@@ -609,32 +609,59 @@ async function sendOutboundSummary(ctx: import('./outbound/store.js').OutboundCa
 // =============================================
 
 app.get('/dashboard', async (req, res) => {
-    const settings = await settingsDb.getSettings();
+    const tenantId = (req as any).tenantId;
+    const settings = await settingsDb.getSettings(tenantId);
+    const tenant = await tenantDb.getTenant(tenantId) || {
+        name: 'Default Client',
+        groqApiKey: '', openRouterApiKey: '', openAiApiKey: '', elevenLabsApiKey: '',
+        twilioPhoneNumber: '', twilioWhatsappNumber: '', systemPromptMaster: ''
+    };
+
     const html = `
     <!DOCTYPE html>
     <html lang="es">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>NEXUS | Voice Settings</title>
+        <title>Panel de Cliente | NEXUS</title>
         <style>
             body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; max-width: 600px; margin: 40px auto; padding: 20px; background-color: #f5f5f7; color: #1d1d1f; }
-            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
-            h2 { margin-top: 0; display: flex; align-items: center; gap: 10px; }
-            label { display: block; margin-bottom: 20px; font-weight: 500; }
-            select { width: 100%; padding: 12px; margin-top: 8px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 16px; box-sizing: border-box; }
-            select:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.1); }
-            .btn { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; }
+            .card { background: white; padding: 30px; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); margin-bottom: 20px; }
+            h2 { margin-top: 0; display: flex; align-items: center; gap: 10px; font-size: 22px; }
+            label { display: block; margin-bottom: 15px; font-weight: 500; font-size: 14px; }
+            input[type="text"], input[type="password"], textarea, select { width: 100%; padding: 12px; margin-top: 6px; border: 1px solid #d2d2d7; border-radius: 8px; font-size: 15px; box-sizing: border-box; }
+            input:focus, textarea:focus, select:focus { outline: none; border-color: #0071e3; box-shadow: 0 0 0 3px rgba(0,113,227,0.1); }
+            .btn { width: 100%; padding: 14px; background: #0071e3; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: 600; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
             .btn:hover { background: #0077ED; }
-            .note { font-size: 13px; color: #86868b; line-height: 1.4; margin-top: 20px; text-align: center; }
+            .note { font-size: 13px; color: #86868b; line-height: 1.4; margin-top: 10px; }
+            .header-banner { background: #1d1d1f; color: white; padding: 15px 30px; border-radius: 12px; margin-bottom: 20px; display: flex; justify-content: space-between; align-items: center; }
+            .header-banner h1 { margin: 0; font-size: 18px; }
+            .badge { background: #0071e3; padding: 4px 8px; border-radius: 6px; font-size: 12px; font-weight: bold; }
         </style>
     </head>
     <body>
-        <div class="card">
-            <h2>🎙️ Central de Voz NEXUS</h2>
-            <form method="POST" action="/dashboard/save">
+        <div class="header-banner">
+            <h1>NEXUS SaaS Portal</h1>
+            <span class="badge">Workspace: ${tenantId.toUpperCase()}</span>
+        </div>
+
+        <form method="POST" action="/dashboard/save">
+            <div class="card">
+                <h2>LLaves de Inteligencia Artificial (BYOK)</h2>
+                <p class="note" style="margin-top: -10px; margin-bottom: 20px;">Deja los campos en blanco para usar los fondos globales de la plataforma.</p>
+
+                <label>Groq API Key (Latencia Ultra-Baja Llama 3):
+                    <input type="password" name="groqApiKey" value="${tenant.groqApiKey || ''}" placeholder="gsk_..." />
+                </label>
+                <label>OpenRouter API Key (Modelos de Visión):
+                    <input type="password" name="openRouterApiKey" value="${tenant.openRouterApiKey || ''}" placeholder="sk-or-v1-..." />
+                </label>
+            </div>
+
+            <div class="card">
+                <h2>🎙️ Central de Voz y Audio</h2>
                 <label>
-                    Motor de Inteligencia Artificial para Voz:
+                    Motor de Síntesis de Voz:
                     <select name="voiceEngine">
                         <option value="twilio_basic" ${settings.voiceEngine === 'twilio_basic' ? 'selected' : ''}>Twilio Alice (Básico - $0.00/m)</option>
                         <option value="twilio_neural" ${settings.voiceEngine === 'twilio_neural' ? 'selected' : ''}>Twilio Neural (Fluido - $0.01/m)</option>
@@ -642,11 +669,18 @@ app.get('/dashboard', async (req, res) => {
                         <option value="elevenlabs" ${settings.voiceEngine === 'elevenlabs' ? 'selected' : ''}>ElevenLabs (Ultra Realista Actuado - $0.30/m)</option>
                     </select>
                 </label>
+                <div style="display: flex; gap: 10px;">
+                    <label style="flex: 1;">OpenAI API Key:
+                        <input type="password" name="openAiApiKey" value="${tenant.openAiApiKey || ''}" placeholder="sk-proj-..." />
+                    </label>
+                    <label style="flex: 1;">ElevenLabs API Key:
+                        <input type="password" name="elevenLabsApiKey" value="${tenant.elevenLabsApiKey || ''}" placeholder="..." />
+                    </label>
+                </div>
+            </div>
 
-                <button type="submit" class="btn">Aplicar Cambios Globales</button>
-            </form>
-            <p class="note">Los cambios guardados aplicarán instantáneamente para todas las siguientes llamadas salientes y entrantes que responda NEXUS. *NOTA: Para OpenAI o ElevenLabs, asegúrate de haber colocado tus API Keys en las Variables de Entorno de Railway.</p>
-        </div>
+            <button type="submit" class="btn">Guardar Configuración del Espacio de Trabajo</button>
+        </form>
     </body>
     </html>`;
     res.send(html);
@@ -654,10 +688,20 @@ app.get('/dashboard', async (req, res) => {
 
 app.post('/dashboard/save', async (req, res) => {
     try {
-        const { voiceEngine } = req.body;
+        const tenantId = (req as any).tenantId;
+        const { voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey } = req.body;
+
         await settingsDb.saveSettings({
             voiceEngine: voiceEngine as any
+        }, tenantId);
+
+        await tenantDb.saveTenant(tenantId, {
+            groqApiKey: groqApiKey.trim() || undefined,
+            openRouterApiKey: openRouterApiKey.trim() || undefined,
+            openAiApiKey: openAiApiKey.trim() || undefined,
+            elevenLabsApiKey: elevenLabsApiKey.trim() || undefined
         });
+
         res.redirect('/dashboard');
     } catch (err) {
         console.error('Error saving dashboard info', err);

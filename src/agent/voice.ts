@@ -7,10 +7,11 @@ import { unlink } from 'node:fs/promises';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-const groq = new Groq({ apiKey: env.GROQ_API_KEY });
+import { tenantDb } from '../db/tenant.js';
+
 const googleTts = gtts('es'); // 'es' for Spanish
 
-export async function transcribeAudio(fileUrl: string): Promise<string> {
+export async function transcribeAudio(fileUrl: string, tenantId: string = 'default'): Promise<string> {
     const tempFilePath = join(tmpdir(), `voice_${Date.now()}.ogg`);
 
     try {
@@ -30,15 +31,19 @@ export async function transcribeAudio(fileUrl: string): Promise<string> {
             writer.on('error', reject);
         });
 
-        return await transcribeFile(tempFilePath);
+        return await transcribeFile(tempFilePath, tenantId);
     } finally {
         // Cleanup
         try { await unlink(tempFilePath); } catch (e) { }
     }
 }
 
-export async function transcribeFile(filePath: string): Promise<string> {
-    console.log(`[STT] Sending to Groq Whisper: ${filePath}`);
+export async function transcribeFile(filePath: string, tenantId: string = 'default'): Promise<string> {
+    const tenant = await tenantDb.getTenant(tenantId);
+    const groqApiKey = tenant?.groqApiKey || env.GROQ_API_KEY;
+    const groq = new Groq({ apiKey: groqApiKey });
+
+    console.log(`[STT] Sending to Groq Whisper: ${filePath} (Tenant: ${tenantId})`);
     const transcription = await groq.audio.transcriptions.create({
         file: createReadStream(filePath),
         model: 'whisper-large-v3',
@@ -66,8 +71,9 @@ export async function generateVoice(text: string): Promise<string> {
 const AUDIO_DIR = join(process.cwd(), 'public', 'audio');
 if (!existsSync(AUDIO_DIR)) mkdirSync(AUDIO_DIR, { recursive: true });
 
-export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings, baseUrl: string): Promise<{ action: 'say' | 'play', content: string, twilioVoiceId?: string }> {
+export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings, baseUrl: string, tenantId: string = 'default'): Promise<{ action: 'say' | 'play', content: string, twilioVoiceId?: string }> {
     const engine = settings.voiceEngine;
+    const tenant = await tenantDb.getTenant(tenantId);
 
     // Twilio Native
     if (engine === 'twilio_basic') {
@@ -83,14 +89,15 @@ export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings
         const publicUrl = `${baseUrl}/audio/${fileName}`;
 
         // OpenAI TTS
-        if (engine === 'openai' && env.OPENAI_API_KEY) {
-            console.log(`[TTS] Generating voice via OpenAI...`);
+        const openAiKey = tenant?.openAiApiKey || env.OPENAI_API_KEY;
+        if (engine === 'openai' && openAiKey) {
+            console.log(`[TTS] Generating voice via OpenAI (Tenant: ${tenantId})...`);
             const res = await axios.post('https://api.openai.com/v1/audio/speech', {
                 model: 'tts-1',
                 input: text,
                 voice: 'nova', // Good neutral voice
             }, {
-                headers: { 'Authorization': `Bearer ${env.OPENAI_API_KEY}` },
+                headers: { 'Authorization': `Bearer ${openAiKey}` },
                 responseType: 'arraybuffer',
                 timeout: 10000
             });
@@ -99,14 +106,15 @@ export async function getDynamicVoiceTwiML(text: string, settings: VoiceSettings
         }
 
         // ElevenLabs TTS
-        if (engine === 'elevenlabs' && env.ELEVENLABS_API_KEY) {
-            console.log(`[TTS] Generating voice via ElevenLabs...`);
+        const elevenLabsKey = tenant?.elevenLabsApiKey || env.ELEVENLABS_API_KEY;
+        if (engine === 'elevenlabs' && elevenLabsKey) {
+            console.log(`[TTS] Generating voice via ElevenLabs (Tenant: ${tenantId})...`);
             const voiceId = 'EXAVITQu4vr4xnSDxMaL'; // Sarah - Mature, Reassuring, Confident
             const res = await axios.post(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
                 text,
                 model_id: 'eleven_multilingual_v2'
             }, {
-                headers: { 'xi-api-key': env.ELEVENLABS_API_KEY },
+                headers: { 'xi-api-key': elevenLabsKey },
                 responseType: 'arraybuffer',
                 timeout: 15000
             });
