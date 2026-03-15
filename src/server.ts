@@ -679,6 +679,12 @@ app.get('/dashboard', async (req, res) => {
                 </div>
             </div>
 
+            <div class="card">
+                <h2>🧠 Comportamiento / Prompt Maestro</h2>
+                <p class="note" style="margin-top: -10px; margin-bottom: 20px;">Define la "personalidad" de tus agentes. Ejemplo: "Eres María, asistente de soporte técnico de Empresa X. Eres muy amable."</p>
+                <textarea name="systemPromptMaster" rows="5" placeholder="You are NEXUS Tech Hub...">${tenant.systemPromptMaster || ''}</textarea>
+            </div>
+
             <button type="submit" class="btn">Guardar Configuración del Espacio de Trabajo</button>
         </form>
     </body>
@@ -689,7 +695,7 @@ app.get('/dashboard', async (req, res) => {
 app.post('/dashboard/save', async (req, res) => {
     try {
         const tenantId = (req as any).tenantId;
-        const { voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey } = req.body;
+        const { voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey, systemPromptMaster } = req.body;
 
         await settingsDb.saveSettings({
             voiceEngine: voiceEngine as any
@@ -699,7 +705,8 @@ app.post('/dashboard/save', async (req, res) => {
             groqApiKey: groqApiKey.trim() || undefined,
             openRouterApiKey: openRouterApiKey.trim() || undefined,
             openAiApiKey: openAiApiKey.trim() || undefined,
-            elevenLabsApiKey: elevenLabsApiKey.trim() || undefined
+            elevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
+            systemPromptMaster: systemPromptMaster.trim() || undefined
         });
 
         res.redirect('/dashboard');
