@@ -239,7 +239,6 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
         console.log(`[Twilio] AI Response: ${aiResponse}`);
 
         console.log(`[Twilio] Step 4: Generating TTS audio natively with Twilio or selected API...`);
-        await applyDynamicVoice(response, aiResponse, tenantId);
 
         // After getting AI response, wait for the next input seamlessly without beep
         const nextGather = response.gather({
