@@ -39,6 +39,11 @@ const tool = {
             if (!destination.startsWith('+')) destination = '+' + destination;
             if (!destination.startsWith('whatsapp:')) destination = 'whatsapp:' + destination;
 
+            // Fix for Mexico WhatsApp numbers (Twilio requires +521 instead of +52)
+            if (destination.match(/^whatsapp:\+52[^1]/)) {
+                destination = destination.replace('whatsapp:+52', 'whatsapp:+521');
+            }
+
             let source = fromWhatsappNumber;
             if (!source.startsWith('whatsapp:')) source = 'whatsapp:' + source;
 

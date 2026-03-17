@@ -35,10 +35,14 @@ const tool = {
 
             const client = twilio(accountSid, authToken);
 
-            // Format number to ensure it has whatsapp: prefix and a +
-            let destination = args.to.replace(/\s+/g, '');
+            let destination = args.to.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
             if (!destination.startsWith('+')) destination = '+' + destination;
             if (!destination.startsWith('whatsapp:')) destination = 'whatsapp:' + destination;
+
+            // Fix for Mexico WhatsApp numbers (Twilio requires +521 instead of +52)
+            if (destination.match(/^whatsapp:\+52[^1]/)) {
+                destination = destination.replace('whatsapp:+52', 'whatsapp:+521');
+            }
 
             let source = fromWhatsappNumber;
             if (!source.startsWith('whatsapp:')) source = 'whatsapp:' + source;
