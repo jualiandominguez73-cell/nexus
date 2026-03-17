@@ -11,7 +11,7 @@ const tool = {
         properties: {
             to: {
                 type: 'string',
-                description: 'Número de teléfono de destino (ej. +52656...)'
+                description: 'Número de teléfono de destino completo (ej. +526561234567)'
             },
             clientName: {
                 type: 'string',
@@ -35,7 +35,7 @@ const tool = {
 
             const client = twilio(accountSid, authToken);
 
-            let destination = args.to.replace(/\s+/g, '');
+            let destination = args.to.replace(/\s+/g, '').replace(/[^0-9+]/g, '');
             if (!destination.startsWith('+')) destination = '+' + destination;
             if (!destination.startsWith('whatsapp:')) destination = 'whatsapp:' + destination;
 

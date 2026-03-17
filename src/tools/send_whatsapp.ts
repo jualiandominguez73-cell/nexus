@@ -11,7 +11,7 @@ const tool = {
         properties: {
             to: {
                 type: 'string',
-                description: 'Número de teléfono de destino (ej. +52656...)'
+                description: 'Número de teléfono de destino completo (ej. +526561234567)'
             },
             message: {
                 type: 'string',
