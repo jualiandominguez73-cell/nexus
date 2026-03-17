@@ -664,10 +664,10 @@ app.get('/dashboard', async (req, res) => {
                 <p class="note" style="margin-top: -10px; margin-bottom: 20px;">Deja los campos en blanco para usar los fondos globales de la plataforma.</p>
 
                 <label>Groq API Key (Latencia Ultra-Baja Llama 3):
-                    <input type="password" name="groqApiKey" value="${tenant.groqApiKey || ''}" placeholder="gsk_..." />
+                    <input type="password" name="groqApiKey" value="" placeholder="${tenant.groqApiKey ? '(Llave Guardada - Oculta)' : 'gsk_...'}" />
                 </label>
                 <label>OpenRouter API Key (Modelos de Visión):
-                    <input type="password" name="openRouterApiKey" value="${tenant.openRouterApiKey || ''}" placeholder="sk-or-v1-..." />
+                    <input type="password" name="openRouterApiKey" value="" placeholder="${tenant.openRouterApiKey ? '(Llave Guardada - Oculta)' : 'sk-or-v1-...'}" />
                 </label>
             </div>
 
@@ -677,10 +677,10 @@ app.get('/dashboard', async (req, res) => {
 
                 <div style="display: flex; gap: 10px;">
                     <label style="flex: 1;">Twilio Account SID:
-                        <input type="password" name="twilioAccountSid" value="${tenant.twilioAccountSid || ''}" />
+                        <input type="password" name="twilioAccountSid" value="" placeholder="${tenant.twilioAccountSid ? '(Cuenta Guardada - Oculta)' : ''}" />
                     </label>
                     <label style="flex: 1;">Twilio Auth Token:
-                        <input type="password" name="twilioAuthToken" value="${tenant.twilioAuthToken || ''}" />
+                        <input type="password" name="twilioAuthToken" value="" placeholder="${tenant.twilioAuthToken ? '(Token Guardado - Oculto)' : ''}" />
                     </label>
                 </div>
                 <div style="display: flex; gap: 10px; margin-top: 10px;">
@@ -706,10 +706,10 @@ app.get('/dashboard', async (req, res) => {
                 </label>
                 <div style="display: flex; gap: 10px;">
                     <label style="flex: 1;">OpenAI API Key:
-                        <input type="password" name="openAiApiKey" value="${tenant.openAiApiKey || ''}" placeholder="sk-proj-..." />
+                        <input type="password" name="openAiApiKey" value="" placeholder="${tenant.openAiApiKey ? '(Llave Guardada - Oculta)' : 'sk-proj-...'}" />
                     </label>
                     <label style="flex: 1;">ElevenLabs API Key:
-                        <input type="password" name="elevenLabsApiKey" value="${tenant.elevenLabsApiKey || ''}" placeholder="..." />
+                        <input type="password" name="elevenLabsApiKey" value="" placeholder="${tenant.elevenLabsApiKey ? '(Llave Guardada - Oculta)' : '...'}" />
                     </label>
                 </div>
             </div>
@@ -752,20 +752,22 @@ app.post('/dashboard/save', async (req, res) => {
             twilioAccountSid, twilioAuthToken, twilioPhoneNumber, twilioWhatsappNumber
         } = req.body;
 
+        const existingTenant = await tenantDb.getTenant(tenantId) || {} as any;
+
         await settingsDb.saveSettings({
             voiceEngine: voiceEngine as any
         }, tenantId);
 
         await tenantDb.saveTenant(tenantId, {
-            groqApiKey: groqApiKey.trim() || undefined,
-            openRouterApiKey: openRouterApiKey.trim() || undefined,
-            openAiApiKey: openAiApiKey.trim() || undefined,
-            elevenLabsApiKey: elevenLabsApiKey.trim() || undefined,
+            groqApiKey: groqApiKey.trim() || existingTenant.groqApiKey,
+            openRouterApiKey: openRouterApiKey.trim() || existingTenant.openRouterApiKey,
+            openAiApiKey: openAiApiKey.trim() || existingTenant.openAiApiKey,
+            elevenLabsApiKey: elevenLabsApiKey.trim() || existingTenant.elevenLabsApiKey,
             systemPromptMaster: systemPromptMaster.trim() || undefined,
-            twilioAccountSid: twilioAccountSid.trim() || undefined,
-            twilioAuthToken: twilioAuthToken.trim() || undefined,
-            twilioPhoneNumber: twilioPhoneNumber.trim() || undefined,
-            twilioWhatsappNumber: twilioWhatsappNumber.trim() || undefined,
+            twilioAccountSid: twilioAccountSid.trim() || existingTenant.twilioAccountSid,
+            twilioAuthToken: twilioAuthToken.trim() || existingTenant.twilioAuthToken,
+            twilioPhoneNumber: twilioPhoneNumber.trim() || existingTenant.twilioPhoneNumber,
+            twilioWhatsappNumber: twilioWhatsappNumber.trim() || existingTenant.twilioWhatsappNumber,
         });
 
         res.redirect('/dashboard');
