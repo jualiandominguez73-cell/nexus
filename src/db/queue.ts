@@ -47,28 +47,47 @@ export const queueDb = {
 
     async getAllPendingTasksAcrossTenants(): Promise<ScheduledTask[]> {
         const now = new Date();
-        const snapshot = await db.collectionGroup('scheduled_tasks')
+        const allTasks: ScheduledTask[] = [];
+
+        // 1. Fetch from the 'default' legacy collection
+        const defaultRef = db.collection('scheduled_tasks');
+        const defaultSnap = await defaultRef
             .where('status', '==', 'pending')
             .where('scheduledTime', '<=', now)
             .get();
 
-        return snapshot.docs.map(doc => {
+        defaultSnap.docs.forEach(doc => {
             const data = doc.data();
-            // Parse tenantId backwards from the path if possible, or assume it's stored in data
-            // Path structure for tenants: tenants/{tenantId}/scheduled_tasks/{taskId}
-            // Path structure for default: scheduled_tasks/{taskId}
-            let tenantId = 'default';
-            if (doc.ref.parent.parent && doc.ref.parent.parent.id !== 'tenants') {
-                tenantId = doc.ref.parent.parent.id;
-            }
-
-            return {
+            allTasks.push({
                 id: doc.id,
                 ...data,
                 scheduledTime: data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime),
-                tenantId
-            } as ScheduledTask;
+                tenantId: 'default'
+            } as ScheduledTask);
         });
+
+        // 2. Fetch from all tenant subcollections by iterating tenants (to avoid Collection Group missing composite index)
+        const tenantsSnap = await db.collection('tenants').get();
+        for (const tenantDoc of tenantsSnap.docs) {
+            const tenantId = tenantDoc.id;
+            const tenantTasksRef = tenantDoc.ref.collection('scheduled_tasks');
+            const tenantTasksSnap = await tenantTasksRef
+                .where('status', '==', 'pending')
+                .where('scheduledTime', '<=', now)
+                .get();
+
+            tenantTasksSnap.docs.forEach(taskDoc => {
+                const data = taskDoc.data();
+                allTasks.push({
+                    id: taskDoc.id,
+                    ...data,
+                    scheduledTime: data.scheduledTime?.toDate ? data.scheduledTime.toDate() : new Date(data.scheduledTime),
+                    tenantId: tenantId
+                } as ScheduledTask);
+            });
+        }
+
+        return allTasks;
     },
 
     async markTaskComplete(taskId: string, status: 'completed' | 'failed' = 'completed', tenantId: string = 'default') {
