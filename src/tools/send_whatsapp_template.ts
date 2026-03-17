@@ -5,7 +5,7 @@ import { tenantDb } from '../db/tenant.js';
 
 const tool = {
     name: 'send_whatsapp_template_contacto',
-    description: 'Inicia por primera vez una conversación de WhatsApp enviando la plantilla oficial aprobada para agendar contacto con el usuario. USAR ESTO SIEMPRE SI NUNCA SE LE HA HABLADO A LA PERSONA ANTES.',
+    description: 'Inicia por primera vez (o fuera de la ventana de 24 horas) una conversación de WhatsApp enviando la plantilla oficial aprobada para agendar contacto con el usuario. OBGLIGATORIO USAR ESTO SI NUNCA HAS HABLADO CON LA PERSONA ANTES.',
     parameters: {
         type: 'object',
         properties: {

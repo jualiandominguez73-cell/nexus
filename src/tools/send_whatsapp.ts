@@ -5,7 +5,7 @@ import { tenantDb } from '../db/tenant.js';
 
 const tool = {
     name: 'send_whatsapp',
-    description: 'Envia un mensaje de WhatsApp a un usuario dado. Debes proporcionar el numero de telefono internacional (con o sin +). SOLO USAR CUANDO EL USUARIO TE PIDA EXPLICITAMENTE QUE ENVÍES UN WHATSAPP.',
+    description: 'Envía un mensaje de texto libre de WhatsApp. REGLA ESTRICTA DE WHATSAPP: SOLO puedes usar esta herramienta si sabes que la persona te ha enviado un mensaje de WhatsApp en las últimas 24 horas. Si vas a escribirle a alguien POR PRIMERA VEZ o iniciar un nuevo contacto, ESTÁ PROHIBIDO usar esta herramienta; en su lugar, OBLIGATORIAMENTE debes usar la herramienta "send_whatsapp_template_contacto".',
     parameters: {
         type: 'object',
         properties: {

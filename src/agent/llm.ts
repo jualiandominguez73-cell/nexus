@@ -142,8 +142,29 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
             const response = await groq.chat.completions.create(reqBody);
             return response.choices[0].message;
         } catch (error: any) {
-            console.warn('[LLM] Groq text failed. Attempting fallback... Stripping tools to avoid OpenRouter 500 errors.', error.message);
-            // Completely strip out tools for the fallback, just answer in text
+            console.warn('[LLM] Groq text failed with error:', error.message);
+            // If Groq fails due to tool context validation, strip the tool history and try Groq again WITH tools enabled
+            if (error.message?.includes('tool') || error.message?.includes('failed_generation') || error.message?.includes('400')) {
+                console.warn('[LLM] Scrubbing tool history from messages and retrying Groq...');
+                // Remove all previous messages that have tool_calls or role="tool" to appease Groq's strict validator
+                const sanitizedMessages = messages.filter(m => !(m.tool_calls) && m.role !== 'tool');
+                try {
+                    const retryBody: any = {
+                        model: GROQ_MODEL,
+                        messages: sanitizedMessages,
+                    };
+                    if (tools && tools.length > 0) {
+                        retryBody.tools = tools;
+                        retryBody.tool_choice = 'auto';
+                    }
+                    const retryResponse = await groq.chat.completions.create(retryBody);
+                    return retryResponse.choices[0].message;
+                } catch (retryError: any) {
+                    console.warn('[LLM] Groq retry also failed. Attempting OpenRouter...', retryError.message);
+                }
+            }
+
+            // Completely strip out tools for the ultimate fallback via OpenRouter (Emergency Text Only)
             return await chatCompletionOpenRouter(messages, null, openRouterApiKey);
         }
     } else {
