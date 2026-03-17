@@ -4,8 +4,8 @@ import twilio from 'twilio';
 import { tenantDb } from '../db/tenant.js';
 
 const tool = {
-    name: 'send_whatsapp_template_contacto',
-    description: 'Inicia por primera vez (o fuera de la ventana de 24 horas) una conversación de WhatsApp enviando la plantilla oficial aprobada para agendar contacto con el usuario. OBGLIGATORIO USAR ESTO SI NUNCA HAS HABLADO CON LA PERSONA ANTES.',
+    name: 'send_new_whatsapp',
+    description: 'Inicia por primera vez (o fuera de la ventana de 24 horas) una conversación de WhatsApp enviando la plantilla oficial aprobada para agendar contacto con el usuario. OBLIGATORIO USAR ESTO SI NUNCA HAS HABLADO CON LA PERSONA ANTES o si el usuario te pide enviar un mensaje a un numero nuevo.',
     parameters: {
         type: 'object',
         properties: {

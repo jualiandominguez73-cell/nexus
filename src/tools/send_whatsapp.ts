@@ -4,8 +4,8 @@ import twilio from 'twilio';
 import { tenantDb } from '../db/tenant.js';
 
 const tool = {
-    name: 'send_whatsapp',
-    description: 'Envía un mensaje de texto libre de WhatsApp. REGLA ESTRICTA DE WHATSAPP: SOLO puedes usar esta herramienta si sabes que la persona te ha enviado un mensaje de WhatsApp en las últimas 24 horas. Si vas a escribirle a alguien POR PRIMERA VEZ o iniciar un nuevo contacto, ESTÁ PROHIBIDO usar esta herramienta; en su lugar, OBLIGATORIAMENTE debes usar la herramienta "send_whatsapp_template_contacto".',
+    name: 'reply_to_active_whatsapp',
+    description: 'Envía un mensaje de texto libre de WhatsApp. REGLA ESTRICTA DE WHATSAPP: SOLO puedes usar esta herramienta si sabes que la persona te ha enviado un mensaje de WhatsApp en las últimas 24 horas. Si vas a escribirle a alguien POR PRIMERA VEZ o iniciar un nuevo contacto, ESTÁ PROHIBIDO usar esta herramienta; en su lugar, OBLIGATORIAMENTE debes usar la herramienta "send_new_whatsapp".',
     parameters: {
         type: 'object',
         properties: {
