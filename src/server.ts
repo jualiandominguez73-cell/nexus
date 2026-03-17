@@ -318,9 +318,10 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         // Intercepción: Si el usuario dio clic en el botón de la plantilla "Sí, agendar contacto"
         if (buttonPayload === 'si_agendar') {
             console.log(`[Twilio WhatsApp] Captured 'si_agendar' button click from ${from}. Sending vCard...`);
-            // Construir URL dinámica usando la base original para el Vcard
+            // Construir URL dinámica usando la base original para el Vcard (usamos clean t para evitar duplicados en proxies)
             const baseUrl = req.protocol + '://' + req.get('host');
-            const vcardUrl = `${baseUrl}/api/contact.vcf?t=${webhookTenantId}`;
+            const cleanTenantId = Array.isArray(webhookTenantId) ? webhookTenantId[0] : webhookTenantId;
+            const vcardUrl = `${baseUrl}/api/contact.vcf?t=${cleanTenantId}`;
 
             const msg = response.message('¡Excelente! Haz clic aquí arriba 👆 para guardar mi contacto de WhatsApp oficial. Así podremos conversar sin restricciones siempre que quieras.');
             msg.media(vcardUrl);
