@@ -274,6 +274,29 @@ app.all(['/voice-process', '/api/twilio/voice-process'], async (req, res) => {
     }
 });
 
+// Endpoint dinámico para generar el archivo de Contacto (vCard)
+app.get('/api/contact.vcf', async (req, res) => {
+    const tenantId = typeof req.query.t === 'string' ? req.query.t : 'default';
+    const tenant = await tenantDb.getTenant(tenantId);
+
+    // Obtener los datos del cliente, o usar los fondos globales
+    const rawNumber = tenant?.twilioWhatsappNumber || env.TWILIO_WHATSAPP_NUMBER || '';
+    const cleanNumber = rawNumber.replace('whatsapp:', '').replace('+', '');
+    const companyName = tenant?.name || 'NEXUS';
+
+    const vcf = `BEGIN:VCARD
+VERSION:3.0
+N:${companyName};IA;;;
+FN:${companyName} Agente IA
+ORG:${companyName} Tech Hub;
+TEL;type=CEL;type=VOICE;waid=${cleanNumber}:+${cleanNumber}
+END:VCARD`;
+
+    res.setHeader('Content-Type', 'text/vcard; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="contacto_${companyName}.vcf"`);
+    res.send(vcf);
+});
+
 // WhatsApp / SMS Webhook
 app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
     try {
@@ -287,6 +310,23 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         // Handle basic HTTP GET check
         if (req.method === 'GET') {
             return res.status(200).send('WhatsApp webhook is active.');
+        }
+
+        const buttonPayload = req.body?.ButtonPayload || '';
+        const webhookTenantId = (req as any).tenantId || 'default';
+
+        // Intercepción: Si el usuario dio clic en el botón de la plantilla "Sí, agendar contacto"
+        if (buttonPayload === 'si_agendar') {
+            console.log(`[Twilio WhatsApp] Captured 'si_agendar' button click from ${from}. Sending vCard...`);
+            // Construir URL dinámica usando la base original para el Vcard
+            const baseUrl = req.protocol + '://' + req.get('host');
+            const vcardUrl = `${baseUrl}/api/contact.vcf?t=${webhookTenantId}`;
+
+            const msg = response.message('¡Excelente! Haz clic aquí arriba 👆 para guardar mi contacto de WhatsApp oficial. Así podremos conversar sin restricciones siempre que quieras.');
+            msg.media(vcardUrl);
+
+            res.type('text/xml');
+            return res.send(response.toString());
         }
 
         const threadId = `twilio_wa_${from.replace(/whatsapp:/, '').replace(/\+/g, '')}`;
@@ -332,7 +372,7 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
                         const tempPath = join(tmpdir(), `wa_audio_${Date.now()}${ext}`);
                         writeFileSync(tempPath, Buffer.from(mediaRes.data));
 
-                        const text = await transcribeFile(tempPath, (req as any).tenantId);
+                        const text = await transcribeFile(tempPath, webhookTenantId);
                         audioTranscript += `[Mensaje de Voz del Usuario transcribido]: "${text}"\n`;
                     } catch (err) {
                         console.error('[Twilio WhatsApp] Error downloading/transcribing audio:', err);
@@ -348,10 +388,9 @@ app.all(['/whatsapp', '/api/twilio/whatsapp', '/welcome'], async (req, res) => {
         // WhatsApp system prompt (similar to voice but formatted for texting)
         const waSystemPrompt = 'Eres NEXUS, un asistente inteligente integrado en WhatsApp. Sé amable, conciso y responde como si estuvieras texteando con un amigo. Puedes usar emojis.';
 
-        const tenantId = (req as any).tenantId;
         const aiResponse = await (useMultiAgent
-            ? routerDispatch(threadId, finalMessageContent, undefined, undefined, tenantId)
-            : runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt, undefined, tenantId)
+            ? routerDispatch(threadId, finalMessageContent, undefined, undefined, webhookTenantId)
+            : runAgentLoop(threadId, finalMessageContent, 5, waSystemPrompt, undefined, webhookTenantId)
         ).catch(e => {
             console.error('[WhatsApp Agent Loop Failure]:', e);
             throw new Error(`AI Agent failed: ${e.message}`);
