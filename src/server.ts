@@ -653,7 +653,7 @@ app.get('/dashboard', async (req, res) => {
     const tenant = await tenantDb.getTenant(tenantId) || {
         name: 'Default Client',
         groqApiKey: '', openRouterApiKey: '', openAiApiKey: '', elevenLabsApiKey: '',
-        twilioPhoneNumber: '', twilioWhatsappNumber: '', twilioAccountSid: '', twilioAuthToken: '', systemPromptMaster: ''
+        twilioPhoneNumber: '', twilioWhatsappNumber: '', twilioWhatsappTemplateSid: '', twilioAccountSid: '', twilioAuthToken: '', systemPromptMaster: ''
     };
 
     // Fetch intelligent agenda/contacts for this tenant
@@ -729,6 +729,9 @@ app.get('/dashboard', async (req, res) => {
                     <label style="flex: 1;">Twilio WhatsApp Number:
                         <input type="text" name="twilioWhatsappNumber" value="${tenant.twilioWhatsappNumber || ''}" placeholder="+1234..." />
                     </label>
+                    <label style="flex: 1;">Twilio WA Template SID:
+                        <input type="text" name="twilioWhatsappTemplateSid" value="${tenant.twilioWhatsappTemplateSid || ''}" placeholder="HX..." />
+                    </label>
                 </div>
             </div>
 
@@ -788,7 +791,7 @@ app.post('/dashboard/save', async (req, res) => {
         const tenantId = (req as any).tenantId;
         const {
             voiceEngine, groqApiKey, openRouterApiKey, openAiApiKey, elevenLabsApiKey, systemPromptMaster,
-            twilioAccountSid, twilioAuthToken, twilioPhoneNumber, twilioWhatsappNumber
+            twilioAccountSid, twilioAuthToken, twilioPhoneNumber, twilioWhatsappNumber, twilioWhatsappTemplateSid
         } = req.body;
 
         const existingTenant = await tenantDb.getTenant(tenantId) || {} as any;
@@ -807,6 +810,7 @@ app.post('/dashboard/save', async (req, res) => {
             twilioAuthToken: twilioAuthToken.trim() || existingTenant.twilioAuthToken,
             twilioPhoneNumber: twilioPhoneNumber.trim() || existingTenant.twilioPhoneNumber,
             twilioWhatsappNumber: twilioWhatsappNumber.trim() || existingTenant.twilioWhatsappNumber,
+            twilioWhatsappTemplateSid: twilioWhatsappTemplateSid.trim() || existingTenant.twilioWhatsappTemplateSid,
         });
 
         res.redirect('/dashboard');

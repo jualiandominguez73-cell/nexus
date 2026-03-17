@@ -12,6 +12,7 @@ export interface TenantConfig {
     twilioAuthToken?: string;
     twilioPhoneNumber?: string;
     twilioWhatsappNumber?: string;
+    twilioWhatsappTemplateSid?: string;
     openAiApiKey?: string;
     elevenLabsApiKey?: string;
 

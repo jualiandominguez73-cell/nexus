@@ -42,11 +42,16 @@ const tool = {
             let source = fromWhatsappNumber;
             if (!source.startsWith('whatsapp:')) source = 'whatsapp:' + source;
 
+            const templateSid = tenant?.twilioWhatsappTemplateSid || env.TWILIO_WHATSAPP_TEMPLATE_SID;
+            if (!templateSid) {
+                return "Error: No se ha configurado el TWILIO_WHATSAPP_TEMPLATE_SID en las variables de entorno o en el dashboard. Necesario para iniciar conversaciones nuevas.";
+            }
+
             console.log(`[Tool] Ejecutando envío de plantilla WhatsApp a ${destination}...`);
             const sentMessage = await client.messages.create({
                 from: source,
                 to: destination,
-                contentSid: 'HX2700e39b41cb96af581b4301ff114270', // Content SID Dinámico
+                contentSid: templateSid, // Content SID Dinámico o Global
                 contentVariables: JSON.stringify({ "1": args.clientName })
             });
 
