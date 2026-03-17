@@ -82,9 +82,13 @@ export class BaseAgent {
                 const contacts = await contactsDb.getAllContacts(meta.telegramChatId, tenantId);
                 if (contacts.length > 0) {
                     const contactList = contacts.map(c => `- ${c.name}: ${c.phone}`).join('\n');
+                    console.log(`[BaseAgent] Loaded ${contacts.length} contacts for user ${meta.telegramChatId}`);
                     prompt += `\n\n[AGENDA DE CONTACTOS]\n${contactList}\n- Usa esta agenda para deducir el numero de telefono cuando el usuario te pida llamar o mandar mensaje a alguien por su nombre.`;
+                } else {
+                    console.log(`[BaseAgent] No contacts found for user ${meta.telegramChatId}`);
                 }
-            } catch {
+            } catch (err: any) {
+                console.error(`[BaseAgent] Error loading contacts for prompt:`, err);
                 // Contacts not critical, continue without them
             }
         }
