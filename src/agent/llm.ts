@@ -164,8 +164,8 @@ async function _chatCompletionInner(originalMessages: any[], useFallback = false
                 }
             }
 
-            // Completely strip out tools for the ultimate fallback via OpenRouter (Emergency Text Only)
-            return await chatCompletionOpenRouter(messages, null, openRouterApiKey);
+            // Intento de fallback a OpenRouter con herramientas activadas
+            return await chatCompletionOpenRouter(messages, tools, openRouterApiKey);
         }
     } else {
         return await chatCompletionOpenRouter(messages, tools, openRouterApiKey);
